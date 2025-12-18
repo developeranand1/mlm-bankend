@@ -16,7 +16,67 @@ const UserSchema = new mongoose.Schema({
     default: 'User',
   },
   kyc: { type: mongoose.Schema.Types.ObjectId, ref: "Kyc" },
+
+
+  referralLink: {
+    type: String,
+    unique: true,  // Ensures each user has a unique referral link
+  },
+  referralCode: {
+    type: String,
+    unique: true,  // Unique referral code for each user
+  },
+  referredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',  // To track who referred the user
+    default: null
+  },
+  profile: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Profile'
+  },
+  earnings: {
+    type: Number,
+    default: 0
+  },
+  downlineCount: {
+    type: Number,
+    default: 0
+  },
+  treePosition: {
+    type: String,
+    enum: ['binary', 'unilevel', 'matrix'],
+    required: true,
+    default: 'binary',
+  },
+  ewallet: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ewallet'
+  },
+
+
+  leftReferral: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null  // Left position in the binary tree
+  },
+  rightReferral: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null  // Right position in the binary tree
+  },
+  downline: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ]
+
 }, {timestamps: true});
+
+
+
+
 
 // Pre-save hook to generate username automatically if it's not provided
 UserSchema.pre('save', async function () {
