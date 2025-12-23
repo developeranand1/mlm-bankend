@@ -18,10 +18,12 @@ const UserSchema = new mongoose.Schema({
   kyc: { type: mongoose.Schema.Types.ObjectId, ref: "Kyc" },
 
 
-  referralLink: {
-    type: String,
-    unique: true,  // Ensures each user has a unique referral link
-  },
+referralLink: {
+  type: String,
+  unique: true,
+  sparse: true,     // ⭐ ye line fix hai
+  default: undefined
+},
   referralCode: {
     type: String,
     unique: true,  // Unique referral code for each user

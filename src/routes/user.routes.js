@@ -13,4 +13,6 @@ router.put('/updateKYC/:userId', upload.fields([
   { name: 'passbookImage', maxCount: 1 },
 ]), updateKYC);
 
+
+
 module.exports = router;

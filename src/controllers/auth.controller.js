@@ -5,6 +5,55 @@ const { validationResult } = require("express-validator");
 const generateReferralCode = require('../utils/generateReferralCode');
 // Register User with role
 
+
+
+exports.adminLogin = async (req, res) => {
+  const { email, username, password } = req.body;
+
+  try {
+    // Check if email or username is provided
+    let user;
+    if (email) {
+      user = await User.findOne({ email }); // Search for user by email
+    } else if (username) {
+      user = await User.findOne({ username }); // Search for user by username
+    }
+
+    // If no user is found
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid email/username or password' });
+    }
+
+    // Check if the user is an Admin
+    if (user.role !== 'Admin') {
+      return res.status(403).json({ message: 'Only admin users can login' });
+    }
+
+    // Check if password matches
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid email/username or password' });
+    }
+
+    // Create JWT token for the user
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET, // Your JWT secret from environment variable
+      { expiresIn: '1h' }
+    );
+
+    // Send response with token and user info
+    res.json({
+      message: 'Login successful',
+      token,  // Send the JWT token
+      user: { id: user._id, name: user.name, email: user.email, role: user.role }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 exports.registerUser = async (req, res) => {
   const { name, email, password, phone, role, referralCode } = req.body;
 

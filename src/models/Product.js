@@ -34,7 +34,7 @@ const productSchema = new mongoose.Schema({
   subcategory: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'SubCategory',
-    required: true,
+
   },
   brand: {
     type: String,

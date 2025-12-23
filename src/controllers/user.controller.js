@@ -2,15 +2,22 @@ const User = require("../models/User");
 const Kyc = require("../models/Kyc");
 const cloudinary = require("../config/cloudinary");
 
-exports.getUsers=async(req, res)=>{
-try {
-    const users = await User.find().select('-password').populate('kyc'); 
-    res.json({ users });
+exports.getUsers = async (req, res) => {
+  try {
+    const users = await User.find({ role: 'User' })
+      .select('-password')
+      .populate('kyc');
+
+    res.status(200).json({
+      count: users.length,
+      users,
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server error');
+    res.status(500).json({ msg: 'Server error' });
   }
-}
+};
+
 
 exports.getKycUsers=async(req, res)=>{
 try {

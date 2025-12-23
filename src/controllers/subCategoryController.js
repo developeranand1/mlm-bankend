@@ -1,6 +1,8 @@
 const SubCategory = require('../models/SubCategory');  // Import the SubCategory model
 const Category = require('../models/Category');  // Import the Category model
 const slugify = require('slugify'); 
+const mongoose = require("mongoose");
+
 
 exports.getSubCategories = async (req, res) => {
   try {
@@ -76,5 +78,40 @@ exports.deleteSubCategory = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to delete subcategory' });
+  }
+};
+
+exports.getSubCategoriesByCategory = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+
+    if (!categoryId) {
+      return res.status(400).json({ message: "categoryId is required" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+      return res.status(400).json({ message: "Invalid categoryId" });
+    }
+
+    // debug (temporary)
+    // console.log("Fetching subcategories for categoryId:", categoryId);
+
+    const subCategories = await SubCategory.find({
+      category: new mongoose.Types.ObjectId(categoryId),
+    })
+      .populate("category", "name")
+      .lean();
+
+    return res.status(200).json({
+      message: "Subcategories fetched successfully",
+      count: subCategories.length,
+      subcategories: subCategories,
+    });
+  } catch (error) {
+    console.error("Get Subcategories Error:", error);
+    return res.status(500).json({
+      message: "Failed to fetch subcategories",
+      error: error.message,
+    });
   }
 };
