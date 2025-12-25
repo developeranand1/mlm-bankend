@@ -5,6 +5,8 @@ const KycSchema = new mongoose.Schema({
   passbookImage: { type: String },
   accountHolderName: { type: String },
   bankAccountNumber: { type: String },
+  bankName: { type: String },
+  bankType: String,
   ifscCode: { type: String },
   aadharNumber: { type: String },
   panNumber: { type: String },
