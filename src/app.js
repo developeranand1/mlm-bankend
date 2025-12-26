@@ -33,6 +33,9 @@ app.use('/api/subcategories', subCategoryRoutes);
 app.use('/api/products', productRoutes);
 app.use("/api/kyc", require("./routes/kyc.routes"));
 
+app.use("/api/auths",require("./routes/auth"))
+
+app.use("/api/pair", require("./routes/pair"));
 
 // Export the app to be used in server.js
 module.exports = app;

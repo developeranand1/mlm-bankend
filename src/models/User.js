@@ -1,107 +1,53 @@
+
+
 const mongoose = require("mongoose");
 
-const UserSchema = new mongoose.Schema({
-  username: {
-    type: String,
-    required: false, 
-    unique: true,
-  },
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  phone: { type: String, required: true },
-  password: { type: String, required: true },
-  role: {
-    type: String,
-    enum: ['User', 'Admin'],
-    default: 'User',
-  },
-  kyc: { type: mongoose.Schema.Types.ObjectId, ref: "Kyc" },
+const UserSchema = new mongoose.Schema(
+  {
+    username: { type: String, required: false, unique: true },
 
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    phone: { type: String, required: true },
+    password: { type: String, required: true },
 
-referralLink: {
-  type: String,
-  unique: true,
-  sparse: true,     // ⭐ ye line fix hai
-  default: undefined
-},
-  referralCode: {
-    type: String,
-    unique: true,  // Unique referral code for each user
+    role: {
+      type: String,
+      enum: ["User", "Admin"], // request me "Admin" bhejna
+      default: "User",
+    },
+
+    referralCode: { type: String, unique: true },
+    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+
+    // Binary tree pointers
+    leftReferral: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    rightReferral: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+
+    // Counts for pair logic
+    leftCount: { type: Number, default: 0 },
+    rightCount: { type: Number, default: 0 },
+    pairPaid: { type: Number, default: 0 },
+    pairCount:{type:Number, default:0},
+
+    downline: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   },
-  referredBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',  // To track who referred the user
-    default: null
-  },
-  profile: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Profile'
-  },
-  earnings: {
-    type: Number,
-    default: 0
-  },
-  downlineCount: {
-    type: Number,
-    default: 0
-  },
-  treePosition: {
-    type: String,
-    enum: ['binary', 'unilevel', 'matrix'],
-    required: true,
-    default: 'binary',
-  },
-  ewallet: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Ewallet'
-  },
+  { timestamps: true }
+);
 
-
-  leftReferral: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null  // Left position in the binary tree
-  },
-  rightReferral: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null  // Right position in the binary tree
-  },
-  downline: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    }
-  ]
-
-}, {timestamps: true});
-
-
-
-
-
-// Pre-save hook to generate username automatically if it's not provided
-UserSchema.pre('save', async function () {
-  const user = this; // 'this' refers to the current document being saved
-
+// Auto username generator (same as yours)
+UserSchema.pre("save", async function () {
+  const user = this;
   if (!user.username) {
-    // Generate username from name and email or any other logic
-    let generatedUsername = user.name.split(' ')[0] + Math.floor(Math.random() * 1000);
-    
-    // Ensure the username is unique
-    let usernameExists = await mongoose.models.User.findOne({ username: generatedUsername });
-    while (usernameExists) {
-      // If username exists, append a new random number
-      const randomSuffix = Math.floor(Math.random() * 1000);
-      generatedUsername = user.name.split(' ')[0] + randomSuffix;
-      usernameExists = await mongoose.models.User.findOne({ username: generatedUsername });
+    let generated = user.name.split(" ")[0] + Math.floor(Math.random() * 1000);
+    let exists = await mongoose.models.User.findOne({ username: generated });
+    while (exists) {
+      generated = user.name.split(" ")[0] + Math.floor(Math.random() * 1000);
+      exists = await mongoose.models.User.findOne({ username: generated });
     }
-
-    // Assign the generated username to this document
-    user.username = generatedUsername;
+    user.username = generated;
   }
-
-  // No need to call next() in async function, Mongoose will handle it automatically
 });
 
 module.exports = mongoose.model("User", UserSchema);
+
