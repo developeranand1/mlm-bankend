@@ -8,8 +8,6 @@ exports.getUsers = async (req, res) => {
   try {
     const users = await User.find({ role: "User" })
       .select("-password")
-      .populate("kyc");
-
     res.status(200).json({
       count: users.length,
       users,
