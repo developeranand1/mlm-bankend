@@ -6,7 +6,45 @@ const cloudinary = require("../config/cloudinary"); // Import Cloudinary configu
 const upload = require("../middlewares/upload.middleware"); // Import Multer upload
 const sharp = require("sharp");
 
-// Controller to add a new Product
+
+const Order = require("../models/Order");
+const { debitWallet } = require("../services/wallet.service");
+
+exports.buyProduct = async (req, res) => {
+  const session = await mongoose.startSession();
+  const userId = req.user._id;
+  const { productId } = req.params;
+
+  await session.withTransaction(async () => {
+    const product = await Product.findById(productId).session(session);
+    if (!product) throw new Error("Product not found");
+
+    await debitWallet(
+      {
+        userId,
+        amount: product.price,
+        reason: "PRODUCT_PURCHASE",
+        referenceId: productId,
+      },
+      session
+    );
+
+    await Order.create(
+      [{
+        userId,
+        items: [{ productId, price: product.price }],
+        totalAmount: product.price,
+        paymentMode: "WALLET",
+        status: "PAID",
+      }],
+      { session }
+    );
+  });
+
+  session.endSession();
+  res.json({ message: "Product purchased successfully" });
+};
+
 exports.addProduct = async (req, res) => {
   try {
     // Handle the image upload with Multer

@@ -10,11 +10,13 @@ const {
   getProductsByCategory,
   getProductsBySubcategory,
   getProductBySlug,
-} = require("../controllers/productController"); // Import product controller functions
+  buyProduct
+} = require("../controllers/productController");
 
 const router = express.Router();
 
-// Define routes and ensure the handlers are functions
+
+router.post("/products/:productId/buy", buyProduct);
 
 // Add a new product
 router.post("/add-product", addProduct);

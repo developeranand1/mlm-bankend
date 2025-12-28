@@ -7,52 +7,100 @@ const generateReferralCode = require('../utils/generateReferralCode');
 
 
 
-exports.adminLogin = async (req, res) => {
-  const { email, username, password } = req.body;
-
+exports.registerAdmin = async (req, res) => {
   try {
-    // Check if email or username is provided
-    let user;
-    if (email) {
-      user = await User.findOne({ email }); // Search for user by email
-    } else if (username) {
-      user = await User.findOne({ username }); // Search for user by username
+    const { name, email, phone, password } = req.body;
+
+    // Check existing admin by email
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "Email already registered",
+      });
     }
 
-    // If no user is found
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid email/username or password' });
-    }
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Check if the user is an Admin
-    if (user.role !== 'Admin') {
-      return res.status(403).json({ message: 'Only admin users can login' });
-    }
-
-    // Check if password matches
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid email/username or password' });
-    }
-
-    // Create JWT token for the user
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET, // Your JWT secret from environment variable
-      { expiresIn: '1h' }
-    );
-
-    // Send response with token and user info
-    res.json({
-      message: 'Login successful',
-      token,  // Send the JWT token
-      user: { id: user._id, name: user.name, email: user.email, role: user.role }
+    // Create admin only
+    const admin = await User.create({
+      name,
+      email,
+      phone,
+      password: hashedPassword,
+      role: "Admin", // 🔥 force Admin
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+
+    res.status(201).json({
+      success: true,
+      message: "Admin registered successfully",
+      admin: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
+
+
+
+exports.adminLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Check admin exists
+    const admin = await User.findOne({ email, role: "Admin" });
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: "Admin not found or access denied",
+      });
+    }
+
+    // Password check
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    // JWT Token
+    const token = jwt.sign(
+      { id: admin._id, role: admin.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Admin login successful",
+      token,
+      user: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 
 exports.registerUser = async (req, res) => {
   const { name, email, password, phone, role, referralCode } = req.body;

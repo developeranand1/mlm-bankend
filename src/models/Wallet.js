@@ -1,13 +1,14 @@
-
-// models/Wallet.js
 const mongoose = require("mongoose");
 
-const WalletSchema = new mongoose.Schema(
+const walletSchema = new mongoose.Schema(
   {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", unique: true, index: true },
-    balance: { type: Number, default: 0 },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", unique: true,
+      sparse: true,   // ⭐ MOST IMPORTANT
+      index: true },
+    balance: { type: Number, default: 0 }, // in rupees (or use paise everywhere)
+    locked: { type: Number, default: 0 },  // optional: for pending withdrawals
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Wallet", WalletSchema);
+module.exports = mongoose.model("Wallet", walletSchema);
