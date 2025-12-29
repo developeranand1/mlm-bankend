@@ -30,6 +30,9 @@ async function upsertUserRankByPairCount(userId, pairCount, session) {
         bonusCash: rank.bonusCash,
         reward: rank.reward,
         pairCountAtUpdate: pairCount || 0,
+        bonusClaimed: false,
+      bonusClaimedAt: null,
+      bonusClaimedAmount: 0,
       },
       $currentDate: { updatedAt: true }, // ✅ force update timestamp
     },

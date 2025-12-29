@@ -1,16 +1,71 @@
-// src/controllers/walletController.js
+
 const mongoose = require("mongoose");
 const UserRank = require("../models/UserRank");
 const Wallet = require("../models/Wallet");
 
+// exports.claimRankBonus = async (req, res) => {
+// const userId = req.user._id;
+
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     // 1️⃣ UserRank fetch
+//     const rank = await UserRank.findOne({ user: userId }).session(session);
+
+//     if (!rank) {
+//       await session.abortTransaction();
+//       return res.status(404).json({ ok: false, error: "UserRank not found" });
+//     }
+
+//     if (rank.bonusClaimed) {
+//       await session.abortTransaction();
+//       return res.status(400).json({ ok: false, error: "Bonus already claimed" });
+//     }
+
+//     const bonus = Number(rank.bonusCash || 0);
+//     if (bonus <= 0) {
+//       await session.abortTransaction();
+//       return res.status(400).json({ ok: false, error: "No bonusCash available" });
+//     }
+
+//     // 2️⃣ Wallet create/update + add bonus
+//     const wallet = await Wallet.findOneAndUpdate(
+//       { user: userId },
+//       { $inc: { balance: bonus } },
+//       { upsert: true, new: true, session }
+//     );
+
+//     // 3️⃣ UserRank update → bonusCash ZERO
+//     rank.bonusClaimed = true;
+//     rank.bonusClaimedAt = new Date();
+//     rank.bonusClaimedAmount = bonus;
+//     rank.bonusCash = 0; // 🔥 YAHI MAIN POINT
+//     await rank.save({ session });
+
+//     await session.commitTransaction();
+
+//     return res.json({
+//       ok: true,
+//       message: "Bonus successfully transferred to wallet",
+//       transferredAmount: bonus,
+//       walletBalance: wallet.balance,
+//     });
+//   } catch (err) {
+//     await session.abortTransaction();
+//     return res.status(500).json({ ok: false, error: err.message });
+//   } finally {
+//     session.endSession();
+//   }
+// };
+
 exports.claimRankBonus = async (req, res) => {
-const userId = req.user._id;
+  const userId = req.user._id;
 
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    // 1️⃣ UserRank fetch
     const rank = await UserRank.findOne({ user: userId }).session(session);
 
     if (!rank) {
@@ -18,36 +73,32 @@ const userId = req.user._id;
       return res.status(404).json({ ok: false, error: "UserRank not found" });
     }
 
-    if (rank.bonusClaimed) {
-      await session.abortTransaction();
-      return res.status(400).json({ ok: false, error: "Bonus already claimed" });
-    }
-
+    // ✅ ONLY depend on bonusCash
     const bonus = Number(rank.bonusCash || 0);
     if (bonus <= 0) {
       await session.abortTransaction();
       return res.status(400).json({ ok: false, error: "No bonusCash available" });
     }
 
-    // 2️⃣ Wallet create/update + add bonus
+    // ✅ Wallet add
     const wallet = await Wallet.findOneAndUpdate(
-      { user: userId },
+      { user: userId },                 // IMPORTANT: Wallet schema must have `user`
       { $inc: { balance: bonus } },
-      { upsert: true, new: true, session }
+      { upsert: true, new: true, session, setDefaultsOnInsert: true }
     );
 
-    // 3️⃣ UserRank update → bonusCash ZERO
-    rank.bonusClaimed = true;
+    // ✅ Mark claim history + zero bonusCash
+    rank.bonusClaimed = true;           // optional (just for UI)
     rank.bonusClaimedAt = new Date();
-    rank.bonusClaimedAmount = bonus;
-    rank.bonusCash = 0; // 🔥 YAHI MAIN POINT
+    rank.bonusClaimedAmount = bonus;    // last claimed amount
+    rank.bonusCash = 0;
     await rank.save({ session });
 
     await session.commitTransaction();
 
     return res.json({
       ok: true,
-      message: "Bonus successfully transferred to wallet",
+      message: "Bonus transferred to wallet",
       transferredAmount: bonus,
       walletBalance: wallet.balance,
     });
