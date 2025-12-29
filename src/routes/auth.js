@@ -10,36 +10,7 @@ const jwt = require("jsonwebtoken");
 
 const router = express.Router();
 
-// async function upsertUserRank(userId, session) {
-//   const user = await User.findById(userId)
-//     .select("_id pairCount")
-//     .session(session);
-//   if (!user) return null;
 
-//   const rank = getRankByPairs(user.pairCount || 0);
-//   if (!rank) {
-//     // no rank achieved yet -> optional: delete rank doc
-//     await UserRank.deleteOne({ user: user._id }).session(session);
-//     return null;
-//   }
-
-//   await UserRank.updateOne(
-//     { user: user._id },
-//     {
-//       $set: {
-//         position: rank.position,
-//         rankName: rank.rankName,
-//         requiredPairsPerSide: rank.requiredPairsPerSide,
-//         bonusCash: rank.bonusCash,
-//         reward: rank.reward,
-//         pairCountAtUpdate: user.pairCount || 0,
-//       },
-//     },
-//     { upsert: true, session }
-//   );
-
-//   return rank;
-// }
 
 async function upsertUserRankByPairCount(userId, pairCount, session) {
   const rank = getRankByPairs(pairCount || 0);
@@ -89,12 +60,7 @@ async function findRootId(startUserId, session) {
   return cur ? cur._id : null;
 }
 
-/**
- * Recalculate pairCount for entire subtree (post-order DFS)
- * pairCount = leftSubtreePairs + rightSubtreePairs + (hasBothChildren ? 1 : 0)
- *
- * IMPORTANT: schema uses leftReferral/rightReferral (not leftChild/rightChild)
- */
+
 async function recalcPairsDFS(nodeId, session, memo = new Map()) {
   if (!nodeId) return 0;
 
@@ -170,7 +136,9 @@ router.post("/register", async (req, res) => {
     const created = createdArr[0];
 
     // Create wallet
-    await Wallet.create([{ user: created._id, balance: 0 }], { session });
+    // await Wallet.create([{ user: created._id, balance: 0 }], { session });
+    // await Wallet.create([{ user: created._id, balance: 0 }], { session });
+
 
   
     let placement = null;
@@ -308,9 +276,11 @@ router.post("/login", async (req, res) => {
     });
 
     // optional data
-    const wallet = await Wallet.findOne({ user: user._id }).select(
-      "balance updatedAt"
-    );
+    // const wallet = await Wallet.findOne({ user: user._id }).select(
+    //   "balance updatedAt"
+    // );
+    // const wallet = await Wallet.findOne({ user: user._id }).select("balance updatedAt");
+
     const rank = await UserRank.findOne({ user: user._id }).select(
       "position rankName requiredPairsPerSide bonusCash reward pairCountAtUpdate updatedAt"
     );
@@ -328,7 +298,7 @@ router.post("/login", async (req, res) => {
         referralCode: user.referralCode,
         pairCount: user.pairCount || 0,
       },
-      wallet: wallet || { balance: 0 },
+      // wallet: wallet || { balance: 0 },
       rank: rank || null,
     });
   } catch (err) {

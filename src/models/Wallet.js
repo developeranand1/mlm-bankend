@@ -1,12 +1,39 @@
+
+
+// const mongoose = require("mongoose");
+
+// const walletSchema = new mongoose.Schema(
+//   {
+//     user: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: "User",
+//       unique: true,
+//       required: true,
+//       index: true,
+//        sparse: true,
+//     },
+//     balance: { type: Number, default: 0 },
+//     locked: { type: Number, default: 0 },
+//   },
+//   { timestamps: true }
+// );
+
+// module.exports = mongoose.model("Wallet", walletSchema);
+
+
 const mongoose = require("mongoose");
 
 const walletSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", unique: true,
-      sparse: true,   // ⭐ MOST IMPORTANT
-      index: true },
-    balance: { type: Number, default: 0 }, // in rupees (or use paise everywhere)
-    locked: { type: Number, default: 0 },  // optional: for pending withdrawals
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true,
+      index: true,
+    },
+    balance: { type: Number, default: 0 },
+    locked: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

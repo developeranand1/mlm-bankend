@@ -1,20 +1,4 @@
-// const jwt = require('jsonwebtoken');
 
-// module.exports = (req, res, next) => {
-//   const token = req.header('x-auth-token');
-  
-//   if (!token) {
-//     return res.status(401).json({ msg: 'No token, authorization denied' });
-//   }
-
-//   try {
-//     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-//     req.user = decoded.user;
-//     next();
-//   } catch (err) {
-//     res.status(401).json({ msg: 'Token is not valid' });
-//   }
-// };
 
 const jwt = require("jsonwebtoken");
 
@@ -65,32 +49,4 @@ module.exports = (req, res, next) => {
     return res.status(401).json({ msg: "Token is not valid" });
   }
 };
-
-
-
-// const jwt = require("jsonwebtoken");
-
-// module.exports = (req, res, next) => {
-//   let token = req.header("x-auth-token");
-
-//   // ALSO allow Authorization: Bearer <token>
-//   if (!token && req.header("authorization")) {
-//     const authHeader = req.header("authorization");
-//     if (authHeader.startsWith("Bearer ")) {
-//       token = authHeader.split(" ")[1];
-//     }
-//   }
-
-//   if (!token) {
-//     return res.status(401).json({ msg: "No token, authorization denied" });
-//   }
-
-//   try {
-//     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-//     req.user = decoded.user; // { id, email, etc }
-//     next();
-//   } catch (err) {
-//     return res.status(401).json({ msg: "Token is not valid" });
-//   }
-// };
 

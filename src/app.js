@@ -9,6 +9,7 @@ const userRoutes = require("./routes/user.routes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const subCategoryRoutes = require("./routes/subCategoryRoutes");
 const productRoutes = require("./routes/productRoutes");
+const walletRoutes = require('./routes/wallet.routes');
 
 dotenv.config(); // Load environment variables
 
@@ -24,6 +25,7 @@ app.use(express.json()); // Parse incoming JSON requests
 app.use(morgan("tiny"));
 
 // API Routes
+app.use("/api/wallet", walletRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/categories", categoryRoutes);
