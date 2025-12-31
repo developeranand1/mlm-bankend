@@ -39,6 +39,9 @@ app.use("/api/pair", require("./routes/pair"));
 app.use("/api/payments", require("./routes/payment.routes"));
 app.use("/api/orders", require("./routes/order.routes"));
 app.use("/api/payment-list", require("./routes/paymentList.routes"));
+app.use("/api/support",require('./routes/supportTicket'))
+
+app.use("/api/contact", require('./routes/contact.routes.js'));
 
 // Export the app to be used in server.js
 module.exports = app;
