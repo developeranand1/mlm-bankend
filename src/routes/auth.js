@@ -202,6 +202,9 @@ router.get("/list", async (req, res) => {
   try {
     const users = await User.find({ role: "User" })
       .select("-password")
+       .populate("referredBy", "name username email") 
+      .populate("leftReferral", "name username")
+      .populate("rightReferral", "name username")
       .sort({ createdAt: -1 });
 
     res.json({
@@ -327,7 +330,7 @@ router.get("/users/:id", async (req, res) => {
 
     const user = await User.findById(id)
       .select("-password") // ❌ password hide
-      .populate("referredBy", "name username email") // optional
+      .populate("referredBy", "name username email") 
       .populate("leftReferral", "name username")
       .populate("rightReferral", "name username");
 
@@ -347,6 +350,26 @@ router.get("/users/:id", async (req, res) => {
       ok: false,
       error: err.message,
     });
+  }
+});
+
+
+router.patch("/users/:id/status",async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body; // true/false
+
+    const user = await User.findByIdAndUpdate(
+      id,
+      { isActive: !!isActive },
+      { new: true }
+    ).select("-password");
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    return res.json({ message: "Status updated", user });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
   }
 });
 

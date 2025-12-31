@@ -1,5 +1,3 @@
-
-
 const mongoose = require("mongoose");
 
 const UserSchema = new mongoose.Schema(
@@ -18,17 +16,31 @@ const UserSchema = new mongoose.Schema(
     },
 
     referralCode: { type: String, unique: true },
-    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    referredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
 
     // Binary tree pointers
-    leftReferral: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-    rightReferral: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    leftReferral: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    rightReferral: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
 
     // Counts for pair logic
     leftCount: { type: Number, default: 0 },
     rightCount: { type: Number, default: 0 },
     pairPaid: { type: Number, default: 0 },
-    pairCount:{type:Number, default:0},
+    pairCount: { type: Number, default: 0 },
+
+    isActive: { type: Boolean, default: true },
 
     downline: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   },
@@ -50,4 +62,3 @@ UserSchema.pre("save", async function () {
 });
 
 module.exports = mongoose.model("User", UserSchema);
-
