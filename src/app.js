@@ -21,7 +21,7 @@ app.use(cors());
 
 // Middleware
 app.use(cors());
-app.use(express.json()); // Parse incoming JSON requests
+app.use(express.json()); 
 app.use(morgan("tiny"));
 
 // API Routes

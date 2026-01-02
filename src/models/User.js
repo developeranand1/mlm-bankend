@@ -43,6 +43,7 @@ const UserSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
 
     downline: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    
   },
   { timestamps: true }
 );
@@ -60,5 +61,16 @@ UserSchema.pre("save", async function () {
     user.username = generated;
   }
 });
+
+UserSchema.virtual("kyc", {
+  ref: "Kyc",
+  localField: "_id",
+  foreignField: "userId", 
+  justOne: true,
+});
+
+UserSchema.set("toJSON", { virtuals: true });
+UserSchema.set("toObject", { virtuals: true });
+
 
 module.exports = mongoose.model("User", UserSchema);
