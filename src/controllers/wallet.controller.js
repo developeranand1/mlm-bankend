@@ -110,29 +110,6 @@ exports.claimRankBonus = async (req, res) => {
   }
 };
 
-// exports.listAllWallets = async (req, res) => {
-//   try {
-//     const wallets = await Wallet.find({})
-//       .populate("user", "name email phone username")
-//       .sort({ createdAt: -1 });
-
-//     return res.json({
-//       ok: true,
-//       count: wallets.length,
-//       wallets: wallets.map(w => ({
-//         id: w._id,
-//         user: w.user,
-//         balance: w.balance,
-//         locked: w.locked,
-//         createdAt: w.createdAt,
-//         updatedAt: w.updatedAt,
-//       })),
-//     });
-//   } catch (err) {
-//     console.error("listAllWallets error:", err);
-//     return res.status(500).json({ ok: false, error: "Server error" });
-//   }
-// };
 
 
 exports.listAllWallets = async (req, res) => {

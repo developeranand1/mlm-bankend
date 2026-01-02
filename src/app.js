@@ -43,5 +43,7 @@ app.use("/api/support",require('./routes/supportTicket'))
 
 app.use("/api/contact", require('./routes/contact.routes.js'));
 
+app.use("/api",require('./routes/withdrawal.routes.js'))
+
 // Export the app to be used in server.js
 module.exports = app;
