@@ -337,10 +337,18 @@ router.post("/login", async (req, res) => {
       ],
     });
 
+
     if (!user) {
       return res.status(401).json({
         ok: false,
         error: "Invalid credentials",
+      });
+    }
+
+    if (user.role !== "User") {
+      return res.status(403).json({
+        ok: false,
+        error: "Access denied. Only users can login here.",
       });
     }
 

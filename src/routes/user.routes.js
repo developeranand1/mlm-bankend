@@ -1,9 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { updateKYC ,getUsers, getKycUsers ,getUserById} = require("../controllers/user.controller"); // This should reference updateKYC, not uploadKYC
+const { updateKYC ,getUsers, getKycUsers ,getUserById,getUserTree} = require("../controllers/user.controller"); // This should reference updateKYC, not uploadKYC
 const authMiddleware = require("../middlewares/auth.middleware");
 const multer = require("multer");
 const upload = multer({ dest: "uploads/" });
+
+router.get("/users/:userId/tree", getUserTree);
 
 router.get('/users', getUsers);
 router.get('/kycs', getKycUsers);

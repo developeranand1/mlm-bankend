@@ -171,3 +171,100 @@ exports.getUserById = async (req, res) => {
     });
   }
 };
+
+
+const pickUser = (u) => ({
+  id: u._id,
+  name: u.name,
+  username: u.username,
+  email: u.email,
+  phone: u.phone,
+  role: u.role,
+  referralCode: u.referralCode,
+  isActive: u.isActive,
+  leftCount: u.leftCount,
+  rightCount: u.rightCount,
+  pairCount: u.pairCount,
+  pairPaid: u.pairPaid,
+  createdAt: u.createdAt,
+});
+
+// recursive tree
+async function buildTree(userId, depth = 10, visited = new Set()) {
+  if (!userId) return null;
+  if (depth <= 0) return null;
+
+  const key = String(userId);
+  if (visited.has(key)) return null; // prevent circular loop
+  visited.add(key);
+
+  const user = await User.findById(userId)
+    .select(
+      "name username email phone role referralCode isActive leftCount rightCount pairCount pairPaid createdAt leftReferral rightReferral referredBy"
+    )
+    .populate("referredBy", "name email username")
+    .populate("leftReferral", "name username email phone role referralCode isActive leftReferral rightReferral")
+    .populate("rightReferral", "name username email phone role referralCode isActive leftReferral rightReferral")
+    .lean();
+
+  if (!user) return null;
+
+  // build children recursively using ids
+  const leftId = user.leftReferral?._id || user.leftReferral;
+  const rightId = user.rightReferral?._id || user.rightReferral;
+
+  const leftSubTree = leftId ? await buildTree(leftId, depth - 1, visited) : null;
+  const rightSubTree = rightId ? await buildTree(rightId, depth - 1, visited) : null;
+
+  return {
+    ...pickUser(user),
+    referredBy: user.referredBy
+      ? {
+          id: user.referredBy._id,
+          name: user.referredBy.name,
+          email: user.referredBy.email,
+          username: user.referredBy.username,
+        }
+      : null,
+    children: {
+      left: leftSubTree,
+      right: rightSubTree,
+    },
+  };
+}
+
+exports.getUserTree = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const depth = Number(req.query.depth || 10); // optional: ?depth=5
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid userId",
+      });
+    }
+
+    const tree = await buildTree(userId, depth);
+
+    if (!tree) {
+      return res.status(404).json({
+        ok: false,
+        error: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      userId,
+      depth,
+      tree,
+    });
+  } catch (err) {
+    console.error("GET TREE ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+    });
+  }
+};

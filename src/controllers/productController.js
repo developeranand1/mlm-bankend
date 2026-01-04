@@ -85,7 +85,7 @@ exports.addProduct = async (req, res) => {
       }
 
       // Generate slug using name and description
-      const slug = slugify(name + " " + description, {
+      const slug = slugify(name, {
         lower: true,
         replacement: "-",
         remove: /[*+~.()'"!:@]/g,
