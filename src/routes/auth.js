@@ -138,9 +138,7 @@ router.post("/register", async (req, res) => {
     );
     const created = createdArr[0];
 
-    // Create wallet
-    // await Wallet.create([{ user: created._id, balance: 0 }], { session });
-    // await Wallet.create([{ user: created._id, balance: 0 }], { session });
+   
 
 
   

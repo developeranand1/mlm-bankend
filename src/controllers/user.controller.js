@@ -3,6 +3,11 @@ const Kyc = require("../models/Kyc");
 const cloudinary = require("../config/cloudinary");
 const mongoose = require("mongoose");
 // const User = require("../models/User");
+const {
+  findRootId,
+  recalcPairsDFS,
+  upsertUserRankByPairCount,
+} = require("../utils/pairsRank");
 
 exports.getUsers = async (req, res) => {
   try {
@@ -268,3 +273,276 @@ exports.getUserTree = async (req, res) => {
     });
   }
 };
+
+
+
+exports.getRootUsers = async (req, res) => {
+  try {
+    const users = await User.find({
+      role: "User",
+      referredBy: null,
+    })
+      .select(
+        "username name email phone role referralCode leftReferral rightReferral leftCount rightCount createdAt"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: users.length,
+      data: users,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+      error: error.message,
+    });
+  }
+};
+
+
+
+
+exports.addUserToTree = async (req, res) => {
+  const { parentId } = req.params;
+  const { childId, side } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(parentId)) {
+    return res.status(400).json({ success: false, message: "Invalid parentId" });
+  }
+  if (!mongoose.Types.ObjectId.isValid(childId)) {
+    return res.status(400).json({ success: false, message: "Invalid childId" });
+  }
+  if (!["left", "right"].includes(side)) {
+    return res.status(400).json({ success: false, message: "side must be 'left' or 'right'" });
+  }
+  if (parentId === childId) {
+    return res.status(400).json({ success: false, message: "Parent and child cannot be same user" });
+  }
+
+  const session = await mongoose.startSession();
+
+  try {
+    await session.withTransaction(async () => {
+      const [parent, child] = await Promise.all([
+        User.findById(parentId).session(session),
+        User.findById(childId).session(session),
+      ]);
+
+      if (!parent) throw new Error("Parent user not found");
+      if (!child) throw new Error("Child user not found");
+
+      // Block if child already attached
+      if (child.referredBy) {
+        throw new Error("Child is already attached to a parent (referredBy exists)");
+      }
+      if (!parent.isActive) {
+        throw new Error("Parent user is inactive");
+      }
+
+      const referralField = side === "left" ? "leftReferral" : "rightReferral";
+      const countField = side === "left" ? "leftCount" : "rightCount";
+
+      if (parent[referralField]) {
+        throw new Error(`Parent ${side} slot already occupied`);
+      }
+
+      // cycle protection (walk up parent chain, child should not appear)
+      let cursor = parent;
+      while (cursor) {
+        if (String(cursor._id) === String(child._id)) {
+          throw new Error("Cycle detected: cannot place parent under its descendant");
+        }
+        if (!cursor.referredBy) break;
+        cursor = await User.findById(cursor.referredBy).session(session);
+      }
+
+      // 1) attach child at parent side + update direct counts
+      parent[referralField] = child._id;
+      parent[countField] = (parent[countField] || 0) + 1;
+
+      // optional downline
+      await User.updateOne(
+        { _id: parent._id },
+        { $addToSet: { downline: child._id } },
+        { session }
+      );
+
+      // 2) set child's referredBy
+      child.referredBy = parent._id;
+
+      await Promise.all([parent.save({ session }), child.save({ session })]);
+
+      // 3) update uplines leftCount/rightCount (as you already do)
+      let currentNodeId = parent._id;
+      let uplineId = parent.referredBy;
+
+      while (uplineId) {
+        const upline = await User.findById(uplineId).session(session);
+        if (!upline) break;
+
+        const isLeftChain =
+          upline.leftReferral && String(upline.leftReferral) === String(currentNodeId);
+
+        const incField = isLeftChain ? "leftCount" : "rightCount";
+
+        await User.updateOne(
+          { _id: upline._id },
+          {
+            $inc: { [incField]: 1 },
+            $addToSet: { downline: child._id },
+          },
+          { session }
+        );
+
+        currentNodeId = upline._id;
+        uplineId = upline.referredBy;
+      }
+
+      // ✅ 4) NOW LIKE REGISTER: recalc pairCount from ROOT + update ranks
+      const rootId = await findRootId(parent._id, session); // or child._id
+      if (rootId) {
+        await recalcPairsDFS(rootId, session);
+      }
+
+      // ✅ 5) ensure child's rank too (optional; recalc already covers if in subtree)
+      await upsertUserRankByPairCount(child._id, child.pairCount || 0, session);
+
+      // NOTE about pairPaid:
+      // pairPaid payout logic depends on your business rules.
+      // If you have a function to compute pairPaid, call it here too.
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "User added to tree successfully (pairCount + rank updated)",
+    });
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message || "Failed to add user to tree",
+    });
+  } finally {
+    session.endSession();
+  }
+};
+
+// exports.addUserToTree = async (req, res) => {
+//   const { parentId } = req.params;
+//   const { childId, side } = req.body;
+
+//   if (!mongoose.Types.ObjectId.isValid(parentId)) {
+//     return res.status(400).json({ success: false, message: "Invalid parentId" });
+//   }
+//   if (!mongoose.Types.ObjectId.isValid(childId)) {
+//     return res.status(400).json({ success: false, message: "Invalid childId" });
+//   }
+//   if (!["left", "right"].includes(side)) {
+//     return res
+//       .status(400)
+//       .json({ success: false, message: "side must be 'left' or 'right'" });
+//   }
+//   if (parentId === childId) {
+//     return res
+//       .status(400)
+//       .json({ success: false, message: "Parent and child cannot be same user" });
+//   }
+
+//   const session = await mongoose.startSession();
+
+//   try {
+//     await session.withTransaction(async () => {
+//       // Fetch parent + child
+//       const [parent, child] = await Promise.all([
+//         User.findById(parentId).session(session),
+//         User.findById(childId).session(session),
+//       ]);
+
+//       if (!parent) throw new Error("Parent user not found");
+//       if (!child) throw new Error("Child user not found");
+
+//       // Optional: block if child already placed in tree
+//       if (child.referredBy) {
+//         throw new Error("Child is already attached to a parent (referredBy exists)");
+//       }
+
+//       // Prevent placing under inactive users (optional)
+//       if (!parent.isActive) {
+//         throw new Error("Parent user is inactive");
+//       }
+
+//       const referralField = side === "left" ? "leftReferral" : "rightReferral";
+//       const countField = side === "left" ? "leftCount" : "rightCount";
+
+//       // Ensure slot empty
+//       if (parent[referralField]) {
+//         throw new Error(`Parent ${side} slot already occupied`);
+//       }
+
+//       // Cycle protection: ensure parent is not in child's downline
+//       // (quick check using referredBy chain; not perfect if your structure changes)
+//       // We'll do a lightweight upward walk from parent to root and ensure we never hit child.
+//       let cursor = parent;
+//       while (cursor) {
+//         if (String(cursor._id) === String(child._id)) {
+//           throw new Error("Cycle detected: cannot place parent under its descendant");
+//         }
+//         if (!cursor.referredBy) break;
+//         cursor = await User.findById(cursor.referredBy).session(session);
+//       }
+
+//       // 1) Attach child to parent on the correct side
+//       parent[referralField] = child._id;
+//       parent.downline = parent.downline || [];
+//       if (!parent.downline.some((id) => String(id) === String(child._id))) {
+//         parent.downline.push(child._id);
+//       }
+//       parent[countField] = (parent[countField] || 0) + 1;
+
+//       // 2) Set child's referredBy
+//       child.referredBy = parent._id;
+
+//       await Promise.all([parent.save({ session }), child.save({ session })]);
+
+//       // 3) Update uplines: increment counts & downline (recommended for pair logic)
+//       // Walk upwards from parent.referredBy and keep updating the SAME side relative to that upline:
+//       // If upline.leftReferral points to the next node in chain => increment leftCount else rightCount.
+//       let currentNodeId = parent._id; // node that was updated/connected below upline
+//       let uplineId = parent.referredBy;
+
+//       while (uplineId) {
+//         const upline = await User.findById(uplineId).session(session);
+//         if (!upline) break;
+
+//         const isLeftChain =
+//           upline.leftReferral && String(upline.leftReferral) === String(currentNodeId);
+
+//         const incField = isLeftChain ? "leftCount" : "rightCount";
+
+//         // add child to upline.downline as well (optional but useful)
+//         const update = {
+//           $inc: { [incField]: 1 },
+//           $addToSet: { downline: child._id },
+//         };
+
+//         await User.updateOne({ _id: upline._id }, update, { session });
+
+//         currentNodeId = upline._id;
+//         uplineId = upline.referredBy;
+//       }
+//     });
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "User added to tree successfully",
+//     });
+//   } catch (err) {
+//     return res.status(400).json({
+//       success: false,
+//       message: err.message || "Failed to add user to tree",
+//     });
+//   } finally {
+//     session.endSession();
+//   }
+// };

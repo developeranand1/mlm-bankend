@@ -4,7 +4,114 @@ const User = require("../models/User");
 const { validationResult } = require("express-validator");
 const generateReferralCode = require('../utils/generateReferralCode');
 // Register User with role
+const sendEmail = require("../utils/sendEmail");
+const crypto = require("crypto");
+const resetPasswordTemplate = require("../utils/resetPasswordTemplate");
 
+
+// exports.forgotPassword = async (req, res) => {
+//   try {
+//     const { email } = req.body;
+
+//     const user = await User.findOne({ email });
+//     if (!user) {
+//       return res.status(404).json({ success: false, message: "User not found" });
+//     }
+
+//     const resetToken = crypto.randomBytes(32).toString("hex");
+//     const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+
+//     user.resetPasswordToken = hashedToken;
+//     user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+//     await user.save({ validateBeforeSave: false });
+
+//     const resetUrl = `http://localhost:3000/reset-password/${resetToken}`;
+
+//     await sendEmail({
+//       to: user.email,
+//       subject: "Reset Password",
+//       text: `Reset your password using this link: ${resetUrl}`,
+//       html: `<p><a href="${resetUrl}">Reset Password</a></p>`,
+//     });
+
+//     res.json({ success: true, message: "Reset link sent to email" });
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+    await user.save({ validateBeforeSave: false });
+
+    const resetUrl = `https://oldasgold.com/reset-password/${resetToken}`;
+
+    // ✅ USE EMAIL TEMPLATE WITH USER NAME
+    const html = resetPasswordTemplate({
+      name: user.name,
+      resetUrl,
+      appName: "Your App Name",
+    });
+
+    await sendEmail({
+      to: user.email,
+      subject: "Reset Password",
+      text: `Hello ${user.name}, reset your password using this link: ${resetUrl}`,
+      html,
+    });
+
+    res.json({
+      success: true,
+      message: "Reset link sent to email",
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Token invalid or expired",
+      });
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+
+    await user.save();
+
+    res.json({ success: true, message: "Password reset successful" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 
 exports.registerAdmin = async (req, res) => {
@@ -51,6 +158,49 @@ exports.registerAdmin = async (req, res) => {
   }
 };
 
+exports.deleteUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // ✅ Validate ObjectId
+    if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // ❗ OPTIONAL: Prevent admin deletion
+    // if (user.role === "Admin") {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Admin cannot be deleted",
+    //   });
+    // }
+
+    await User.findByIdAndDelete(userId);
+
+    res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+    });
+  } catch (error) {
+    console.error("DELETE USER ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
 
 
 // exports.adminLogin = async (req, res) => {

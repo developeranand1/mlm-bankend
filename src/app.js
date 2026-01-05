@@ -47,5 +47,8 @@ app.use("/api",require('./routes/withdrawal.routes.js'))
 
 app.use("/api/admin", require("./routes/adminStats.routes"));
 
+
+app.use("/api/excel",  require("./routes/userImport.js"));
+
 // Export the app to be used in server.js
 module.exports = app;
