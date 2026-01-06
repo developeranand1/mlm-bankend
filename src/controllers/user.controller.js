@@ -12,7 +12,7 @@ const {
 exports.getUsers = async (req, res) => {
   try {
     const users = await User.find({ role: "User" })
-      .select("-password")
+      // .select("-password")
       .populate("referredBy", "name username email")
       .populate("leftReferral", "name username")
       .populate("rightReferral", "name username")
@@ -286,6 +286,8 @@ exports.getRootUsers = async (req, res) => {
     const users = await User.find({
       role: "User",
       referredBy: null,
+      leftReferral:null,
+      rightReferral:null
     })
       .select(
         "username name email phone role referralCode leftReferral rightReferral leftCount rightCount createdAt"
