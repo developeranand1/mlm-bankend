@@ -44,6 +44,12 @@ const UserSchema = new mongoose.Schema(
 
     downline: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
+    status: {
+      type: String,
+      default: "Pending",
+      enum: ["Pending", "Approved", "Reject"],
+    },
+
     resetPasswordToken: { type: String },
     resetPasswordExpire: { type: Date },
   },

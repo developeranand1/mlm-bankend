@@ -13,7 +13,7 @@ exports.getUsers = async (req, res) => {
   try {
     const users = await User.find({ role: "User" })
       .select("-password")
-       .populate("referredBy", "name username email") 
+      .populate("referredBy", "name username email")
       .populate("leftReferral", "name username")
       .populate("rightReferral", "name username")
       .sort({ createdAt: -1 });
@@ -149,34 +149,30 @@ exports.updateKYC = async (req, res) => {
   }
 };
 
-
 exports.getUserById = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const user = await User.findById(userId)
-      .populate("kyc");  
+    const user = await User.findById(userId).populate("kyc");
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found"
+        message: "User not found",
       });
     }
 
     res.status(200).json({
       success: true,
-      data: user
+      data: user,
     });
-
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
-
 
 const pickUser = (u) => ({
   id: u._id,
@@ -192,6 +188,7 @@ const pickUser = (u) => ({
   pairCount: u.pairCount,
   pairPaid: u.pairPaid,
   createdAt: u.createdAt,
+  status: u.status || "Pending",
 });
 
 // recursive tree
@@ -205,11 +202,17 @@ async function buildTree(userId, depth = 10, visited = new Set()) {
 
   const user = await User.findById(userId)
     .select(
-      "name username email phone role referralCode isActive leftCount rightCount pairCount pairPaid createdAt leftReferral rightReferral referredBy"
+      "name username email phone role referralCode isActive leftCount rightCount pairCount pairPaid createdAt leftReferral rightReferral referredBy status"
     )
-    .populate("referredBy", "name email username")
-    .populate("leftReferral", "name username email phone role referralCode isActive leftReferral rightReferral")
-    .populate("rightReferral", "name username email phone role referralCode isActive leftReferral rightReferral")
+    .populate("referredBy", "name email username status")
+    .populate(
+      "leftReferral",
+      "name username email phone role referralCode isActive leftReferral rightReferral status"
+    )
+    .populate(
+      "rightReferral",
+      "name username email phone role referralCode isActive leftReferral rightReferral status"
+    )
     .lean();
 
   if (!user) return null;
@@ -218,8 +221,12 @@ async function buildTree(userId, depth = 10, visited = new Set()) {
   const leftId = user.leftReferral?._id || user.leftReferral;
   const rightId = user.rightReferral?._id || user.rightReferral;
 
-  const leftSubTree = leftId ? await buildTree(leftId, depth - 1, visited) : null;
-  const rightSubTree = rightId ? await buildTree(rightId, depth - 1, visited) : null;
+  const leftSubTree = leftId
+    ? await buildTree(leftId, depth - 1, visited)
+    : null;
+  const rightSubTree = rightId
+    ? await buildTree(rightId, depth - 1, visited)
+    : null;
 
   return {
     ...pickUser(user),
@@ -229,6 +236,7 @@ async function buildTree(userId, depth = 10, visited = new Set()) {
           name: user.referredBy.name,
           email: user.referredBy.email,
           username: user.referredBy.username,
+          status: user.referredBy.status || "Pending",
         }
       : null,
     children: {
@@ -241,8 +249,7 @@ async function buildTree(userId, depth = 10, visited = new Set()) {
 exports.getUserTree = async (req, res) => {
   try {
     const { userId } = req.params;
-    const depth = Number(req.query.depth || 10); // optional: ?depth=5
-
+    const depth = Number(req.query.depth || 10);
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({
         ok: false,
@@ -274,8 +281,6 @@ exports.getUserTree = async (req, res) => {
   }
 };
 
-
-
 exports.getRootUsers = async (req, res) => {
   try {
     const users = await User.find({
@@ -301,24 +306,30 @@ exports.getRootUsers = async (req, res) => {
   }
 };
 
-
-
-
 exports.addUserToTree = async (req, res) => {
   const { parentId } = req.params;
   const { childId, side } = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(parentId)) {
-    return res.status(400).json({ success: false, message: "Invalid parentId" });
+    return res
+      .status(400)
+      .json({ success: false, message: "Invalid parentId" });
   }
   if (!mongoose.Types.ObjectId.isValid(childId)) {
     return res.status(400).json({ success: false, message: "Invalid childId" });
   }
   if (!["left", "right"].includes(side)) {
-    return res.status(400).json({ success: false, message: "side must be 'left' or 'right'" });
+    return res
+      .status(400)
+      .json({ success: false, message: "side must be 'left' or 'right'" });
   }
   if (parentId === childId) {
-    return res.status(400).json({ success: false, message: "Parent and child cannot be same user" });
+    return res
+      .status(400)
+      .json({
+        success: false,
+        message: "Parent and child cannot be same user",
+      });
   }
 
   const session = await mongoose.startSession();
@@ -335,7 +346,9 @@ exports.addUserToTree = async (req, res) => {
 
       // Block if child already attached
       if (child.referredBy) {
-        throw new Error("Child is already attached to a parent (referredBy exists)");
+        throw new Error(
+          "Child is already attached to a parent (referredBy exists)"
+        );
       }
       if (!parent.isActive) {
         throw new Error("Parent user is inactive");
@@ -352,7 +365,9 @@ exports.addUserToTree = async (req, res) => {
       let cursor = parent;
       while (cursor) {
         if (String(cursor._id) === String(child._id)) {
-          throw new Error("Cycle detected: cannot place parent under its descendant");
+          throw new Error(
+            "Cycle detected: cannot place parent under its descendant"
+          );
         }
         if (!cursor.referredBy) break;
         cursor = await User.findById(cursor.referredBy).session(session);
@@ -383,7 +398,8 @@ exports.addUserToTree = async (req, res) => {
         if (!upline) break;
 
         const isLeftChain =
-          upline.leftReferral && String(upline.leftReferral) === String(currentNodeId);
+          upline.leftReferral &&
+          String(upline.leftReferral) === String(currentNodeId);
 
         const incField = isLeftChain ? "leftCount" : "rightCount";
 
@@ -425,6 +441,45 @@ exports.addUserToTree = async (req, res) => {
     });
   } finally {
     session.endSession();
+  }
+};
+
+exports.updateUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+
+    // Validate status
+    if (!["Approved", "Reject", "Pending"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status value",
+      });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    user.status = status;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: `User status updated to ${status}`,
+      data: user,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 };
 
