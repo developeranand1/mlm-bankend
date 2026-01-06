@@ -50,5 +50,8 @@ app.use("/api/admin", require("./routes/adminStats.routes"));
 
 app.use("/api/excel",  require("./routes/userImport.js"));
 
+
+app.use("/api/admin-tree", require("./routes/adminTree.routes"));
+
 // Export the app to be used in server.js
 module.exports = app;
