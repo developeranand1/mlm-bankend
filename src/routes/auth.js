@@ -457,4 +457,85 @@ router.patch("/users/:id/status",async (req, res) => {
   }
 });
 
+
+router.put("/users/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, email, phone } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ ok: false, error: "Invalid userId" });
+    }
+
+    // at least one field
+    if (!name && !email && !phone) {
+      return res.status(400).json({
+        ok: false,
+        error: "Provide at least one field: name, email, phone",
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "User not found" });
+    }
+
+    // EMAIL uniqueness check (ignore same user)
+    if (email && email !== user.email) {
+      const emailExists = await User.findOne({
+        email: email.trim().toLowerCase(),
+        _id: { $ne: userId },
+      });
+
+      if (emailExists) {
+        return res
+          .status(409)
+          .json({ ok: false, error: "Email already exists" });
+      }
+    }
+
+    // PHONE uniqueness check (optional but recommended)
+    if (phone && phone !== user.phone) {
+      const phoneExists = await User.findOne({
+        phone: phone.trim(),
+        _id: { $ne: userId },
+      });
+
+      if (phoneExists) {
+        return res
+          .status(409)
+          .json({ ok: false, error: "Phone already exists" });
+      }
+    }
+
+    // Update only allowed fields
+    if (name) user.name = name.trim();
+    if (email) user.email = email.trim().toLowerCase();
+    if (phone) user.phone = phone.trim();
+
+    await user.save();
+
+    // return safe fields
+    return res.json({
+      ok: true,
+      message: "User updated successfully",
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        username: user.username,
+        status: user.status,
+        isActive: user.isActive,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err.message || "Server error",
+    });
+  }
+});
+
+
 module.exports = router;
