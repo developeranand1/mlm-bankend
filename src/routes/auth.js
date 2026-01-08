@@ -11,7 +11,229 @@ const { applyDailyPairLimit } = require("../utils/pairLimit");
 
 const router = express.Router();
 
+const PAIR_INCOME_PER_PAIR = 100;
 
+async function payPairsForUser(userId, newPairsToPay, session) {
+  if (!newPairsToPay || newPairsToPay <= 0) {
+    return { payablePairs: 0, skippedPairs: 0, maxLimitReached: false };
+  }
+
+  const { payablePairs, skippedPairs, maxLimitReached } =
+    await applyDailyPairLimit(userId, newPairsToPay, session);
+
+  if (payablePairs > 0) {
+    const amount = payablePairs * PAIR_INCOME_PER_PAIR;
+
+    // Add to UserRank.pairAmount
+    await UserRank.updateOne(
+      { user: userId },
+      { $inc: { pairAmount: amount } },
+      { session }
+    );
+
+    // (Optional) If you also want to credit wallet, uncomment:
+    // await Wallet.updateOne(
+    //   { user: userId },
+    //   { $inc: { balance: amount } },
+    //   { upsert: true, session }
+    // );
+  }
+
+  return { payablePairs, skippedPairs, maxLimitReached };
+}
+
+
+async function upsertUserRankByPairCount(userId, pairCount, session) {
+  const rank = getRankByPairs(pairCount || 0);
+
+  if (!rank) {
+    await UserRank.deleteOne({ user: userId }).session(session);
+    return null;
+  }
+
+  await UserRank.updateOne(
+    { user: userId },
+    {
+      $set: {
+        position: rank.position,
+        rankName: rank.rankName,
+        requiredPairsPerSide: rank.requiredPairsPerSide,
+        bonusCash: rank.bonusCash,
+        reward: rank.reward,
+        pairCountAtUpdate: pairCount || 0,
+        bonusClaimed: false,
+        bonusClaimedAt: null,
+        bonusClaimedAmount: 0,
+      },
+      $currentDate: { updatedAt: true },
+    },
+    { upsert: true, session, setDefaultsOnInsert: true }
+  );
+
+  return rank;
+}
+
+/**
+ * Find root by following referredBy chain up to top
+ */
+async function findRootId(startUserId, session) {
+  let cur = await User.findById(startUserId)
+    .select("_id referredBy")
+    .session(session);
+
+  if (!cur) return null;
+
+  while (cur.referredBy) {
+    const next = await User.findById(cur.referredBy)
+      .select("_id referredBy")
+      .session(session);
+    if (!next) break;
+    cur = next;
+  }
+
+  return cur ? cur._id : null;
+}
+
+// 🔁 Recalculate pairs and pay 100 per pair (max 5 per day)
+async function recalcPairsDFS(nodeId, session, memo = new Map()) {
+  if (!nodeId) return 0;
+
+  const key = String(nodeId);
+  if (memo.has(key)) return memo.get(key);
+
+  const node = await User.findById(nodeId)
+    .select("_id leftReferral rightReferral pairCount")
+    .session(session);
+
+  if (!node) return 0;
+
+  const leftPairs = node.leftReferral
+    ? await recalcPairsDFS(node.leftReferral, session, memo)
+    : 0;
+
+  const rightPairs = node.rightReferral
+    ? await recalcPairsDFS(node.rightReferral, session, memo)
+    : 0;
+
+  const selfPair = node.leftReferral && node.rightReferral ? 1 : 0;
+  const totalPairs = leftPairs + rightPairs + selfPair;
+
+  const prevPairCount = node.pairCount || 0;
+  const newPairsToPay = Math.max(0, totalPairs - prevPairCount); // ✅ only newly formed pairs
+
+  // Always update pairCount (pairs always counted)
+  await User.updateOne(
+    { _id: node._id },
+    { $set: { pairCount: totalPairs } },
+    { session }
+  );
+
+  // Ensure rank doc exists / updated
+  await upsertUserRankByPairCount(node._id, totalPairs, session);
+
+  // Pay 100 per pair for newly formed pairs (max 5 per day)
+  if (newPairsToPay > 0) {
+    await payPairsForUser(node._id, newPairsToPay, session);
+  }
+
+  memo.set(key, totalPairs);
+  return totalPairs;
+}
+
+// 🚀 Register route (unchanged logic, just uses recalcPairsDFS)
+router.post("/register", async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { name, email, phone, password, referralCode, side } = req.body;
+
+    if (!name || !email || !phone || !password) {
+      throw new Error("name, email, phone, password are required");
+    }
+
+    // Sponsor
+    let sponsor = null;
+    if (referralCode) {
+      sponsor = await User.findOne({ referralCode }).session(session);
+      if (!sponsor) throw new Error("Invalid referral code");
+    }
+
+    // Create user
+    const hashed = await bcrypt.hash(password, 10);
+
+    const createdArr = await User.create(
+      [
+        {
+          name,
+          email,
+          phone,
+          password: hashed,
+          referredBy: sponsor ? sponsor._id : null,
+          referralCode: `RC${Math.random()
+            .toString(36)
+            .slice(2, 8)
+            .toUpperCase()}`,
+        },
+      ],
+      { session }
+    );
+    const created = createdArr[0];
+
+    let placement = null;
+    if (sponsor) {
+      placement = await placeUserBinary({
+        newUserId: created._id,
+        sponsorId: sponsor._id,
+        side: side || "L",
+        session,
+      });
+    }
+
+    // After placement: recalc from root (this will also handle pair payout)
+    const rootId = await findRootId(created._id, session);
+    if (rootId) {
+      await recalcPairsDFS(rootId, session);
+    }
+
+    // Ensure this user has a rank doc as well
+    await upsertUserRankByPairCount(created._id, created.pairCount || 0, session);
+
+    await session.commitTransaction();
+    session.endSession();
+
+    const token = jwt.sign(
+      { user: { id: created._id } },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    return res.json({
+      ok: true,
+      message: "User registered successfully",
+      token,
+      user: {
+        id: created._id,
+        name: created.name,
+        email: created.email,
+        phone: created.phone,
+        referralCode: created.referralCode,
+        referredBy: created.referredBy,
+      },
+      userId: created._id,
+      referralCode: created.referralCode,
+      placement,
+      rootUpdated: !!rootId,
+    });
+  } catch (e) {
+    await session.abortTransaction();
+    session.endSession();
+    return res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+
+/**
 
 async function upsertUserRankByPairCount(userId, pairCount, session) {
   const rank = getRankByPairs(pairCount || 0);
@@ -43,9 +265,6 @@ async function upsertUserRankByPairCount(userId, pairCount, session) {
   return rank;
 }
 
-/**
- * Find root by following referredBy chain up to top
- */
 async function findRootId(startUserId, session) {
   let cur = await User.findById(startUserId)
     .select("_id referredBy")
@@ -87,6 +306,9 @@ async function recalcPairsDFS(nodeId, session, memo = new Map()) {
 
   const selfPair = node.leftReferral && node.rightReferral ? 1 : 0;
   const totalPairs = leftPairs + rightPairs + selfPair;
+
+
+  
 
   await User.updateOne(
     { _id: node._id },
@@ -197,6 +419,11 @@ router.post("/register", async (req, res) => {
   }
 });
 
+ */
+
+
+
+
 router.get("/list", async (req, res) => {
   try {
     const users = await User.find({ role: "User" })
@@ -223,7 +450,7 @@ router.get("/status/:id", async (req, res) => {
       return res.status(404).json({ ok: false, error: "User not found" });
 
     const rank = await UserRank.findOne({ user: user._id }).select(
-      "position rankName requiredPairsPerSide bonusCash reward pairCountAtUpdate updatedAt"
+      "position rankName requiredPairsPerSide bonusCash reward pairCountAtUpdate updatedAt pairAmount"
     );
 
     res.json({

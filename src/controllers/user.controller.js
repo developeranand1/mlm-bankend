@@ -309,6 +309,46 @@ exports.getRootUsers = async (req, res) => {
   }
 };
 
+
+exports.updateUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+
+    // Validate status
+    if (!["Approved", "Reject", "Pending"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status value",
+      });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    user.status = status;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: `User status updated to ${status}`,
+      data: user,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
 exports.addUserToTree = async (req, res) => {
   const { parentId } = req.params;
   const { childId, side } = req.body;
@@ -445,42 +485,4 @@ exports.addUserToTree = async (req, res) => {
   }
 };
 
-exports.updateUserStatus = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { status } = req.body;
-
-    // Validate status
-    if (!["Approved", "Reject", "Pending"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid status value",
-      });
-    }
-
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    user.status = status;
-    await user.save();
-
-    res.status(200).json({
-      success: true,
-      message: `User status updated to ${status}`,
-      data: user,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
 
