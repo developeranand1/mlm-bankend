@@ -7,6 +7,7 @@ const { placeUserBinary } = require("../services/binary.service");
 const UserRank = require("../models/UserRank");
 const { getRankByPairs } = require("../utils/rank.utils");
 const jwt = require("jsonwebtoken");
+const { applyDailyPairLimit } = require("../utils/pairLimit");
 
 const router = express.Router();
 
@@ -235,85 +236,6 @@ router.get("/status/:id", async (req, res) => {
   }
 });
 
-// router.post("/login", async (req, res) => {
-//   try {
-//     const { identifier, password } = req.body;
-//     // identifier = email OR phone OR username
-
-//     if (!identifier || !password) {
-//       return res.status(400).json({
-//         ok: false,
-//         error: "identifier and password are required",
-//       });
-//     }
-
-//     // normalize identifier
-//     const id = identifier.trim();
-
-//     // find by email OR phone OR username
-//     const user = await User.findOne({
-//       $or: [
-//         { email: id.toLowerCase() }, // email
-//         { phone: id }, // phone
-//         { username: id }, // username
-//       ],
-//     });
-
-//     if (!user) {
-//       return res.status(401).json({
-//         ok: false,
-//         error: "Invalid credentials",
-//       });
-//     }
-
-//     const match = await bcrypt.compare(password, user.password);
-//     if (!match) {
-//       return res.status(401).json({
-//         ok: false,
-//         error: "Invalid credentials",
-//       });
-//     }
-
-//     // JWT token
-//     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-//       expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-//     });
-
-//     // optional data
-//     // const wallet = await Wallet.findOne({ user: user._id }).select(
-//     //   "balance updatedAt"
-//     // );
-//     // const wallet = await Wallet.findOne({ user: user._id }).select("balance updatedAt");
-
-//     const rank = await UserRank.findOne({ user: user._id }).select(
-//       "position rankName requiredPairsPerSide bonusCash reward pairCountAtUpdate updatedAt"
-//     );
-
-//     return res.status(200).json({
-//       ok: true,
-//       message: "Login successful",
-//       token,
-//       user: {
-//         id: user._id,
-//         name: user.name,
-//         username: user.username,
-//         email: user.email,
-//         phone: user.phone,
-//         referralCode: user.referralCode,
-//         pairCount: user.pairCount || 0,
-//       },
-//       // wallet: wallet || { balance: 0 },
-//       rank: rank || null,
-//     });
-//   } catch (err) {
-//     console.error("LOGIN ERROR:", err);
-//     return res.status(500).json({
-//       ok: false,
-//       error: "Server error",
-//     });
-//   }
-// });
-
 router.post("/login", async (req, res) => {
   try {
     const { identifier, password } = req.body;
@@ -355,6 +277,13 @@ router.post("/login", async (req, res) => {
       return res.status(403).json({
         ok: false,
         error: "Your account is inactive. Please contact support.",
+      });
+    }
+
+     if (user.status !== 'Approved') {
+      return res.status(403).json({
+        ok: false,
+        error: "Your account is not approved. Please contact support.",
       });
     }
 

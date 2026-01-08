@@ -52,6 +52,11 @@ const UserSchema = new mongoose.Schema(
 
     resetPasswordToken: { type: String },
     resetPasswordExpire: { type: Date },
+
+
+     dailyPairPaid: { type: Number, default: 0 },   // pairs paid today
+    lastPairPaidDate: { type: Date, default: null }, 
+    maxLimitReached: { type: Boolean, default: false }
   },
   { timestamps: true }
 );

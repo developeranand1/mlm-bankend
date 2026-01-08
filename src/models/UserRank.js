@@ -5,6 +5,9 @@ const UserRankSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", unique: true, required: true },
 
+
+    pairAmount: { type: Number, default: 0 },
+
     position: { type: Number, required: true },
     rankName: { type: String, required: true },
 

@@ -287,7 +287,8 @@ exports.getRootUsers = async (req, res) => {
       role: "User",
       referredBy: null,
       leftReferral:null,
-      rightReferral:null
+      rightReferral:null,
+      status: "Approved",
     })
       .select(
         "username name email phone role referralCode leftReferral rightReferral leftCount rightCount createdAt"
