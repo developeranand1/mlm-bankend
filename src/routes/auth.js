@@ -95,6 +95,149 @@ async function findRootId(startUserId, session) {
 }
 
 // 🔁 Recalculate pairs and pay 100 per pair (max 5 per day)
+// async function recalcPairsDFS(nodeId, session, memo = new Map()) {
+//   if (!nodeId) return 0;
+
+//   const key = String(nodeId);
+//   if (memo.has(key)) return memo.get(key);
+
+//   const node = await User.findById(nodeId)
+//     .select("_id leftReferral rightReferral pairCount")
+//     .session(session);
+
+//   if (!node) return 0;
+
+//   const leftPairs = node.leftReferral
+//     ? await recalcPairsDFS(node.leftReferral, session, memo)
+//     : 0;
+
+//   const rightPairs = node.rightReferral
+//     ? await recalcPairsDFS(node.rightReferral, session, memo)
+//     : 0;
+
+//   const selfPair = node.leftReferral && node.rightReferral ? 1 : 0;
+//   const totalPairs = leftPairs + rightPairs + selfPair;
+
+//   const prevPairCount = node.pairCount || 0;
+//   const newPairsToPay = Math.max(0, totalPairs - prevPairCount); // ✅ only newly formed pairs
+
+//   // Always update pairCount (pairs always counted)
+//   await User.updateOne(
+//     { _id: node._id },
+//     { $set: { pairCount: totalPairs } },
+//     { session }
+//   );
+
+//   // Ensure rank doc exists / updated
+//   await upsertUserRankByPairCount(node._id, totalPairs, session);
+
+//   // Pay 100 per pair for newly formed pairs (max 5 per day)
+//   if (newPairsToPay > 0) {
+//     await payPairsForUser(node._id, newPairsToPay, session);
+//   }
+
+//   memo.set(key, totalPairs);
+//   return totalPairs;
+// }
+
+
+/**
+ * Count pairs for ONE user using "full levels only" rule.
+ *
+ * Rule:
+ *  - BFS from this user as root.
+ *  - Track left-side and right-side node counts.
+ *  - Levels:
+ *      * As long as EVERY node on a level has both children,
+ *        we allow going deeper.
+ *      * At the FIRST level where ANY node is missing left/right child,
+ *        we still count nodes on that level, but we DO NOT go deeper.
+ *  - pairCount = min(effectiveLeftNodes, effectiveRightNodes)
+ */
+async function computePairsUsingFullLevels(rootId, session) {
+  const root = await User.findById(rootId)
+    .select("leftReferral rightReferral")
+    .session(session);
+
+  if (!root) return 0;
+
+  const queue = [];
+
+  if (root.leftReferral) {
+    queue.push({
+      id: root.leftReferral,
+      depth: 1,
+      side: "left",
+    });
+  }
+
+  if (root.rightReferral) {
+    queue.push({
+      id: root.rightReferral,
+      depth: 1,
+      side: "right",
+    });
+  }
+
+  let depthLimit = Infinity; // jis depth pe pehli baar incomplete node mile
+  let effectiveLeft = 0;
+  let effectiveRight = 0;
+
+  while (queue.length > 0) {
+    const { id, depth, side } = queue.shift();
+
+    // agar depthLimit set ho chuka hai, uske niche wale nodes ignore honge
+    if (depth > depthLimit) continue;
+
+    // is node ko side ke count me add karo
+    if (side === "left") effectiveLeft++;
+    else effectiveRight++;
+
+    // agar ye hi limiting depth hai, children ko explore mat karo
+    if (depth === depthLimit) continue;
+
+    const node = await User.findById(id)
+      .select("leftReferral rightReferral")
+      .session(session);
+
+    if (!node) continue;
+
+    const hasLeft = !!node.leftReferral;
+    const hasRight = !!node.rightReferral;
+
+    // agar node ke dono child nahi hai -> ye level se aage count nahi karna
+    if (!hasLeft || !hasRight) {
+      if (depthLimit === Infinity) {
+        depthLimit = depth; // yahi last depth hai jahan tak count allowed hai
+      }
+      // is node ke children ko queue me mat daalo
+      continue;
+    }
+
+    // node full hai aur abhi depthLimit nahi hai -> children add karo
+    if (hasLeft) {
+      queue.push({
+        id: node.leftReferral,
+        depth: depth + 1,
+        side, // root ke respect me side same rahega
+      });
+    }
+    if (hasRight) {
+      queue.push({
+        id: node.rightReferral,
+        depth: depth + 1,
+        side,
+      });
+    }
+  }
+
+  // Final pairs: left/right effective nodes ka min
+  return Math.min(effectiveLeft, effectiveRight);
+}
+
+
+
+// 🔁 Recalculate pairs and pay 100 per pair (max 5 per day)
 async function recalcPairsDFS(nodeId, session, memo = new Map()) {
   if (!nodeId) return 0;
 
@@ -107,16 +250,8 @@ async function recalcPairsDFS(nodeId, session, memo = new Map()) {
 
   if (!node) return 0;
 
-  const leftPairs = node.leftReferral
-    ? await recalcPairsDFS(node.leftReferral, session, memo)
-    : 0;
-
-  const rightPairs = node.rightReferral
-    ? await recalcPairsDFS(node.rightReferral, session, memo)
-    : 0;
-
-  const selfPair = node.leftReferral && node.rightReferral ? 1 : 0;
-  const totalPairs = leftPairs + rightPairs + selfPair;
+  // ❗ NEW: use level-based rule instead of recursive sum
+  const totalPairs = await computePairsUsingFullLevels(node._id, session);
 
   const prevPairCount = node.pairCount || 0;
   const newPairsToPay = Math.max(0, totalPairs - prevPairCount); // ✅ only newly formed pairs
@@ -137,8 +272,18 @@ async function recalcPairsDFS(nodeId, session, memo = new Map()) {
   }
 
   memo.set(key, totalPairs);
+
+  // DFS continue: ensure children also get recalculated with same rule
+  if (node.leftReferral) {
+    await recalcPairsDFS(node.leftReferral, session, memo);
+  }
+  if (node.rightReferral) {
+    await recalcPairsDFS(node.rightReferral, session, memo);
+  }
+
   return totalPairs;
 }
+
 
 // 🚀 Register route (unchanged logic, just uses recalcPairsDFS)
 router.post("/register", async (req, res) => {
