@@ -1,10 +1,13 @@
-// src/models/UserRank.js
 const mongoose = require("mongoose");
 
 const UserRankSchema = new mongoose.Schema(
   {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", unique: true, required: true },
-
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      unique: true,
+      required: true,
+    },
 
     pairAmount: { type: Number, default: 0 },
 
@@ -15,15 +18,15 @@ const UserRankSchema = new mongoose.Schema(
     requiredPairsPerSide: { type: Number, required: true },
 
     bonusCash: { type: Number, default: 0 }, // like 500, 1000 etc
-    reward: { type: String, default: "" },   // like ANDROID PHONE, BIKE etc
+    reward: { type: String, default: "" }, // like ANDROID PHONE, BIKE etc
 
     // snapshot jab update hua
     pairCountAtUpdate: { type: Number, default: 0 },
     updatedAt: { type: Date, default: Date.now },
 
     bonusClaimed: { type: Boolean, default: false },
-bonusClaimedAt: { type: Date, default: null },
-bonusClaimedAmount: { type: Number, default: 0 }
+    bonusClaimedAt: { type: Date, default: null },
+    bonusClaimedAmount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

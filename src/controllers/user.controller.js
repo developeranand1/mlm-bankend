@@ -490,3 +490,94 @@ exports.addUserToTree = async (req, res) => {
 };
 
 
+exports.getUserByIdDetails = async (req, res) => {
+  // yaha pe downline, leftReferral, rightReferral sabko populate kar rahe hain
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId)
+      // virtual kyc
+      .populate("kyc")
+      // left user detail
+      .populate({
+        path: "leftReferral",
+        select: "name email phone username referralCode status isActive leftCount rightCount",
+      })
+      // right user detail
+      .populate({
+        path: "rightReferral",
+        select: "name email phone username referralCode status isActive leftCount rightCount",
+      })
+      // saari downline users
+      .populate({
+        path: "downline",
+        select: "name email username referralCode status isActive leftCount rightCount",
+      });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+exports.updatePairCount = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { pairCount } = req.body;
+
+    // Validate userId
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid userId",
+      });
+    }
+
+    // Validate pairCount
+    if (typeof pairCount !== "number") {
+      return res.status(400).json({
+        success: false,
+        message: "pairCount must be a number",
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: { pairCount } },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "pairCount updated successfully",
+      data: user,
+    });
+
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message || "Server error",
+    });
+  }
+};

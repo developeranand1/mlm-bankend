@@ -53,5 +53,8 @@ app.use("/api/excel",  require("./routes/userImport.js"));
 
 app.use("/api/admin-tree", require("./routes/adminTree.routes"));
 
+
+app.use("/api/user-rank", require("./routes/userRank.routes.js"));
+
 // Export the app to be used in server.js
 module.exports = app;

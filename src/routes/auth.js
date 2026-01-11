@@ -285,6 +285,33 @@ async function recalcPairsDFS(nodeId, session, memo = new Map()) {
 }
 
 
+async function propagateDownline(parentId, childId, session) {
+  // 1) direct parent
+  await User.updateOne(
+    { _id: parentId },
+    { $addToSet: { downline: childId } },
+    { session }
+  );
+
+  // 2) saare uplines (referredBy chain)
+  let currentNode = await User.findById(parentId).session(session);
+  let uplineId = currentNode ? currentNode.referredBy : null;
+
+  while (uplineId) {
+    const upline = await User.findById(uplineId).session(session);
+    if (!upline) break;
+
+    await User.updateOne(
+      { _id: upline._id },
+      { $addToSet: { downline: childId } },
+      { session }
+    );
+
+    uplineId = upline.referredBy;
+  }
+}
+
+
 // 🚀 Register route (unchanged logic, just uses recalcPairsDFS)
 router.post("/register", async (req, res) => {
   const session = await mongoose.startSession();
@@ -333,6 +360,11 @@ router.post("/register", async (req, res) => {
         side: side || "L",
         session,
       });
+
+       parentIdForDownline = placement?.parentId || sponsor._id;
+
+      // ✅ parent + saare uplines ke downline me is new user ko push karo
+      await propagateDownline(parentIdForDownline, created._id, session);
     }
 
     // After placement: recalc from root (this will also handle pair payout)
@@ -340,6 +372,8 @@ router.post("/register", async (req, res) => {
     if (rootId) {
       await recalcPairsDFS(rootId, session);
     }
+
+     
 
     // Ensure this user has a rank doc as well
     await upsertUserRankByPairCount(created._id, created.pairCount || 0, session);
