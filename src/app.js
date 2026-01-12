@@ -56,5 +56,13 @@ app.use("/api/admin-tree", require("./routes/adminTree.routes"));
 
 app.use("/api/user-rank", require("./routes/userRank.routes.js"));
 
+app.use("/api/weekly-payouts", require("./routes/weeklyPayoutRoutes"));
+
+require("./cron/weeklyPayout")
+
+
+const weeklyPayoutTestRoutes = require("./routes/weeklyPayoutTestRoutes");
+app.use("/api/test/payout", weeklyPayoutTestRoutes);
+
 // Export the app to be used in server.js
 module.exports = app;
