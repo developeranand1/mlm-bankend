@@ -872,5 +872,195 @@ router.put("/users/:userId", async (req, res) => {
   }
 });
 
+router.get("/filter-users", async (req, res) => {
+  try {
+    let {
+      status,
+      isActive,
+      referredBy,
+      fromDate,
+      toDate,
+      search,
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    page = parseInt(page, 10) || 1;
+    limit = parseInt(limit, 10) || 10;
+
+    // ---------- BUILD FILTER ----------
+    const filter = {};
+
+    // force role = "User"
+    filter.role = "User";
+
+    if (status) {
+      filter.status = status;
+    }
+
+    if (isActive !== undefined) {
+      filter.isActive = isActive === "true";
+    }
+
+    if (referredBy) {
+      filter.referredBy = referredBy;
+    }
+
+    // Date filter
+    if (fromDate || toDate) {
+      filter.createdAt = {};
+      if (fromDate) filter.createdAt.$gte = new Date(fromDate);
+      if (toDate) {
+        const end = new Date(toDate);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+
+    // Search
+    if (search) {
+      const regex = new RegExp(search, "i");
+      filter.$or = [
+        { name: regex },
+        { email: regex },
+        { phone: regex },
+        { username: regex },
+      ];
+    }
+
+    // ---------- AGGREGATE STATS WITH FILTER ----------
+    const [statsResult] = await User.aggregate([
+      { $match: filter },
+      {
+        $facet: {
+          countsByStatus: [
+            { $group: { _id: "$status", count: { $sum: 1 } } },
+          ],
+          countsByActive: [
+            { $group: { _id: "$isActive", count: { $sum: 1 } } },
+          ],
+          referralStats: [
+            {
+              $group: {
+                _id: null,
+                totalUsers: { $sum: 1 },
+                withReferredBy: {
+                  $sum: { $cond: [{ $ifNull: ["$referredBy", false] }, 1, 0] },
+                },
+                withLeftReferral: {
+                  $sum: { $cond: [{ $ifNull: ["$leftReferral", false] }, 1, 0] },
+                },
+                withRightReferral: {
+                  $sum: { $cond: [{ $ifNull: ["$rightReferral", false] }, 1, 0] },
+                },
+                withDownline: {
+                  $sum: {
+                    $cond: [
+                      { $gt: [{ $size: { $ifNull: ["$downline", []] } }, 0] },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+          pairStats: [
+            {
+              $group: {
+                _id: null,
+                totalLeftCount: { $sum: "$leftCount" },
+                totalRightCount: { $sum: "$rightCount" },
+                totalPairPaid: { $sum: "$pairPaid" },
+                totalPairCount: { $sum: "$pairCount" },
+                totalDailyPairPaid: { $sum: "$dailyPairPaid" },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    // ---------- FORMAT STATS ----------
+    const countsByStatus = {};
+    (statsResult.countsByStatus || []).forEach((item) => {
+      countsByStatus[item._id] = item.count;
+    });
+
+    const countsByActive = {};
+    (statsResult.countsByActive || []).forEach((item) => {
+      countsByActive[item._id ? "active" : "inactive"] = item.count;
+    });
+
+    const referralStats = statsResult.referralStats?.[0] || {
+      totalUsers: 0,
+      withReferredBy: 0,
+      withLeftReferral: 0,
+      withRightReferral: 0,
+      withDownline: 0,
+    };
+
+    const pairStats = statsResult.pairStats?.[0] || {
+      totalLeftCount: 0,
+      totalRightCount: 0,
+      totalPairPaid: 0,
+      totalPairCount: 0,
+      totalDailyPairPaid: 0,
+    };
+
+    const totalFilteredUsers = referralStats.totalUsers || 0;
+
+    // ---------- PAGINATED USER LIST ----------
+    const users = await User.find(filter)
+      .populate("referredBy", "name email username")
+      .populate("leftReferral", "name email username")
+      .populate("rightReferral", "name email username")
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    return res.json({
+      success: true,
+      filterUsed: filter,
+      pagination: {
+        page,
+        limit,
+        totalFiltered: totalFilteredUsers,
+        totalPages: Math.ceil(totalFilteredUsers / limit) || 1,
+      },
+      stats: {
+        totalUsers: totalFilteredUsers,
+        active: countsByActive.active || 0,
+        inactive: countsByActive.inactive || 0,
+        status: {
+          Pending: countsByStatus.Pending || 0,
+          Approved: countsByStatus.Approved || 0,
+          Reject: countsByStatus.Reject || 0,
+        },
+        referrals: {
+          withReferredBy: referralStats.withReferredBy || 0,
+          withLeftReferral: referralStats.withLeftReferral || 0,
+          withRightReferral: referralStats.withRightReferral || 0,
+          withDownline: referralStats.withDownline || 0,
+        },
+        pairs: {
+          totalLeftCount: pairStats.totalLeftCount || 0,
+          totalRightCount: pairStats.totalRightCount || 0,
+          totalPairPaid: pairStats.totalPairPaid || 0,
+          totalPairCount: pairStats.totalPairCount || 0,
+          totalDailyPairPaid: pairStats.totalDailyPairPaid || 0,
+        },
+      },
+      data: users,
+    });
+  } catch (err) {
+    console.error("Error in GET /api/users:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+});
 
 module.exports = router;
