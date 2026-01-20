@@ -200,12 +200,7 @@ async function payPairsForUser(userId, newPairsToPay, session) {
       { session }
     );
 
-    // (optional) agar direct wallet credit bhi chahiye to yahan karo
-    // await User.updateOne(
-    //   { _id: userId },
-    //   { $inc: { walletBalance: amount } },
-    //   { session }
-    // );
+   
   }
 
   return { payablePairs, skippedPairs, maxLimitReached };

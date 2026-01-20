@@ -25,6 +25,8 @@ app.use(express.json());
 app.use(morgan("tiny"));
 
 // API Routes
+app.use("/api/registers",require('./routes/user.js'))
+app.use("/api/binary",require('./routes/binary.routes.js'))
 app.use("/api/wallet", walletRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
