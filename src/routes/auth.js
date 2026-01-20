@@ -2,7 +2,6 @@ const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
-const Wallet = require("../models/Wallet");
 const { placeUserBinary } = require("../services/binary.service");
 const UserRank = require("../models/UserRank");
 const { getRankByPairs } = require("../utils/rank.utils");
@@ -43,9 +42,49 @@ async function payPairsForUser(userId, newPairsToPay, session) {
 }
 
 
-async function upsertUserRankByPairCount(userId, pairCount, session) {
-  const rank = getRankByPairs(pairCount || 0);
+// async function upsertUserRankByPairCount(userId, pairCount, session) {
+//   const rank = getRankByPairs(pairCount || 0);
 
+//   if (!rank) {
+//     await UserRank.deleteOne({ user: userId }).session(session);
+//     return null;
+//   }
+
+//   await UserRank.updateOne(
+//     { user: userId },
+//     {
+//       $set: {
+//         position: rank.position,
+//         rankName: rank.rankName,
+//         requiredPairsPerSide: rank.requiredPairsPerSide,
+//         bonusCash: rank.bonusCash,
+//         reward: rank.reward,
+//         pairCountAtUpdate: pairCount || 0,
+//         bonusClaimed: false,
+//         bonusClaimedAt: null,
+//         bonusClaimedAmount: 0,
+//       },
+//       $currentDate: { updatedAt: true },
+//     },
+//     { upsert: true, session, setDefaultsOnInsert: true }
+//   );
+
+//   return rank;
+// }
+
+async function upsertUserRankByPairCount(userId, pairCount, session) {
+  const safePairs = pairCount || 0;
+
+  // 🛑 Yahin main condition:
+  // Jab tak koi pair nahi (0 ya negative), UserRank mat rakho
+  if (safePairs <= 0) {
+    await UserRank.deleteOne({ user: userId }).session(session);
+    return null;
+  }
+
+  const rank = getRankByPairs(safePairs);
+
+  // Agar rankConfig hi nahi mila
   if (!rank) {
     await UserRank.deleteOne({ user: userId }).session(session);
     return null;
@@ -60,7 +99,7 @@ async function upsertUserRankByPairCount(userId, pairCount, session) {
         requiredPairsPerSide: rank.requiredPairsPerSide,
         bonusCash: rank.bonusCash,
         reward: rank.reward,
-        pairCountAtUpdate: pairCount || 0,
+        pairCountAtUpdate: safePairs,
         bonusClaimed: false,
         bonusClaimedAt: null,
         bonusClaimedAmount: 0,
@@ -73,8 +112,9 @@ async function upsertUserRankByPairCount(userId, pairCount, session) {
   return rank;
 }
 
+
 /**
- * Find root by following referredBy chain up to top
+
  */
 async function findRootId(startUserId, session) {
   let cur = await User.findById(startUserId)
@@ -94,51 +134,6 @@ async function findRootId(startUserId, session) {
   return cur ? cur._id : null;
 }
 
-// 🔁 Recalculate pairs and pay 100 per pair (max 5 per day)
-// async function recalcPairsDFS(nodeId, session, memo = new Map()) {
-//   if (!nodeId) return 0;
-
-//   const key = String(nodeId);
-//   if (memo.has(key)) return memo.get(key);
-
-//   const node = await User.findById(nodeId)
-//     .select("_id leftReferral rightReferral pairCount")
-//     .session(session);
-
-//   if (!node) return 0;
-
-//   const leftPairs = node.leftReferral
-//     ? await recalcPairsDFS(node.leftReferral, session, memo)
-//     : 0;
-
-//   const rightPairs = node.rightReferral
-//     ? await recalcPairsDFS(node.rightReferral, session, memo)
-//     : 0;
-
-//   const selfPair = node.leftReferral && node.rightReferral ? 1 : 0;
-//   const totalPairs = leftPairs + rightPairs + selfPair;
-
-//   const prevPairCount = node.pairCount || 0;
-//   const newPairsToPay = Math.max(0, totalPairs - prevPairCount); // ✅ only newly formed pairs
-
-//   // Always update pairCount (pairs always counted)
-//   await User.updateOne(
-//     { _id: node._id },
-//     { $set: { pairCount: totalPairs } },
-//     { session }
-//   );
-
-//   // Ensure rank doc exists / updated
-//   await upsertUserRankByPairCount(node._id, totalPairs, session);
-
-//   // Pay 100 per pair for newly formed pairs (max 5 per day)
-//   if (newPairsToPay > 0) {
-//     await payPairsForUser(node._id, newPairsToPay, session);
-//   }
-
-//   memo.set(key, totalPairs);
-//   return totalPairs;
-// }
 
 
 /**
@@ -154,86 +149,179 @@ async function findRootId(startUserId, session) {
  *        we still count nodes on that level, but we DO NOT go deeper.
  *  - pairCount = min(effectiveLeftNodes, effectiveRightNodes)
  */
+
+// pairs.helper.js (ya jahan bhi tumhara function hai)
 async function computePairsUsingFullLevels(rootId, session) {
   const root = await User.findById(rootId)
-    .select("leftReferral rightReferral")
+    .select("leftReferral rightReferral status")
     .session(session);
 
-  if (!root) return 0;
+  // Root khud hi Approved nahi -> is user ke liye koi pair hi nahi
+  if (!root || root.status !== "Approved") return 0;
 
   const queue = [];
 
-  if (root.leftReferral) {
-    queue.push({
-      id: root.leftReferral,
-      depth: 1,
-      side: "left",
-    });
-  }
-
-  if (root.rightReferral) {
-    queue.push({
-      id: root.rightReferral,
-      depth: 1,
-      side: "right",
-    });
-  }
-
-  let depthLimit = Infinity; // jis depth pe pehli baar incomplete node mile
+  let depthLimit = Infinity;
   let effectiveLeft = 0;
   let effectiveRight = 0;
+
+  // BFS start: left/right child agar Approved hai tabhi consider karo
+  if (root.leftReferral) {
+    queue.push({ id: root.leftReferral, depth: 1, side: "left" });
+  }
+  if (root.rightReferral) {
+    queue.push({ id: root.rightReferral, depth: 1, side: "right" });
+  }
 
   while (queue.length > 0) {
     const { id, depth, side } = queue.shift();
 
-    // agar depthLimit set ho chuka hai, uske niche wale nodes ignore honge
     if (depth > depthLimit) continue;
 
-    // is node ko side ke count me add karo
-    if (side === "left") effectiveLeft++;
-    else effectiveRight++;
-
-    // agar ye hi limiting depth hai, children ko explore mat karo
-    if (depth === depthLimit) continue;
-
     const node = await User.findById(id)
-      .select("leftReferral rightReferral")
+      .select("leftReferral rightReferral status")
       .session(session);
 
-    if (!node) continue;
-
-    const hasLeft = !!node.leftReferral;
-    const hasRight = !!node.rightReferral;
-
-    // agar node ke dono child nahi hai -> ye level se aage count nahi karna
-    if (!hasLeft || !hasRight) {
-      if (depthLimit === Infinity) {
-        depthLimit = depth; // yahi last depth hai jahan tak count allowed hai
-      }
-      // is node ke children ko queue me mat daalo
+    // Node missing ya Approved nahi → ye level incomplete maana jayega
+    if (!node || node.status !== "Approved") {
+      if (depthLimit === Infinity) depthLimit = depth;  // yahi first incomplete level
       continue;
     }
 
-    // node full hai aur abhi depthLimit nahi hai -> children add karo
-    if (hasLeft) {
-      queue.push({
-        id: node.leftReferral,
-        depth: depth + 1,
-        side, // root ke respect me side same rahega
-      });
+    // Sirf Approved node hi count hoga
+    if (side === "left") effectiveLeft++;
+    else effectiveRight++;
+
+    if (depth === depthLimit) continue;
+
+    let hasLeft = false;
+    let hasRight = false;
+
+    // LEFT child sirf tab valid hai jab Approved ho
+    if (node.leftReferral) {
+      const leftChild = await User.findById(node.leftReferral)
+        .select("status")
+        .session(session);
+
+      if (leftChild && leftChild.status === "Approved") {
+        hasLeft = true;
+        queue.push({
+          id: leftChild._id,
+          depth: depth + 1,
+          side,
+        });
+      }
     }
-    if (hasRight) {
-      queue.push({
-        id: node.rightReferral,
-        depth: depth + 1,
-        side,
-      });
+
+    // RIGHT child sirf tab valid hai jab Approved ho
+    if (node.rightReferral) {
+      const rightChild = await User.findById(node.rightReferral)
+        .select("status")
+        .session(session);
+
+      if (rightChild && rightChild.status === "Approved") {
+        hasRight = true;
+        queue.push({
+          id: rightChild._id,
+          depth: depth + 1,
+          side,
+        });
+      }
+    }
+
+    // Agar kisi bhi side ka Approved child missing hai → depth yahin lock
+    if (!hasLeft || !hasRight) {
+      if (depthLimit === Infinity) {
+        depthLimit = depth;
+      }
     }
   }
 
-  // Final pairs: left/right effective nodes ka min
+  // Final pairs: dono side ke Approved nodes ka min
   return Math.min(effectiveLeft, effectiveRight);
 }
+
+
+// async function computePairsUsingFullLevels(rootId, session) {
+//   const root = await User.findById(rootId)
+//     .select("leftReferral rightReferral")
+//     .session(session);
+
+//   if (!root) return 0;
+
+//   const queue = [];
+
+//   if (root.leftReferral) {
+//     queue.push({
+//       id: root.leftReferral,
+//       depth: 1,
+//       side: "left",
+//     });
+//   }
+
+//   if (root.rightReferral) {
+//     queue.push({
+//       id: root.rightReferral,
+//       depth: 1,
+//       side: "right",
+//     });
+//   }
+
+//   let depthLimit = Infinity; // jis depth pe pehli baar incomplete node mile
+//   let effectiveLeft = 0;
+//   let effectiveRight = 0;
+
+//   while (queue.length > 0) {
+//     const { id, depth, side } = queue.shift();
+
+//     // agar depthLimit set ho chuka hai, uske niche wale nodes ignore honge
+//     if (depth > depthLimit) continue;
+
+//     // is node ko side ke count me add karo
+//     if (side === "left") effectiveLeft++;
+//     else effectiveRight++;
+
+//     // agar ye hi limiting depth hai, children ko explore mat karo
+//     if (depth === depthLimit) continue;
+
+//     const node = await User.findById(id)
+//       .select("leftReferral rightReferral")
+//       .session(session);
+
+//     if (!node) continue;
+
+//     const hasLeft = !!node.leftReferral;
+//     const hasRight = !!node.rightReferral;
+
+//     // agar node ke dono child nahi hai -> ye level se aage count nahi karna
+//     if (!hasLeft || !hasRight) {
+//       if (depthLimit === Infinity) {
+//         depthLimit = depth; // yahi last depth hai jahan tak count allowed hai
+//       }
+//       // is node ke children ko queue me mat daalo
+//       continue;
+//     }
+
+//     // node full hai aur abhi depthLimit nahi hai -> children add karo
+//     if (hasLeft) {
+//       queue.push({
+//         id: node.leftReferral,
+//         depth: depth + 1,
+//         side, // root ke respect me side same rahega
+//       });
+//     }
+//     if (hasRight) {
+//       queue.push({
+//         id: node.rightReferral,
+//         depth: depth + 1,
+//         side,
+//       });
+//     }
+//   }
+
+//   // Final pairs: left/right effective nodes ka min
+//   return Math.min(effectiveLeft, effectiveRight);
+// }
 
 
 
@@ -412,194 +500,63 @@ router.post("/register", async (req, res) => {
 });
 
 
-/**
 
-async function upsertUserRankByPairCount(userId, pairCount, session) {
-  const rank = getRankByPairs(pairCount || 0);
-
-  if (!rank) {
-    await UserRank.deleteOne({ user: userId }).session(session);
-    return null;
-  }
-
-  await UserRank.updateOne(
-    { user: userId },
-    {
-      $set: {
-        position: rank.position,
-        rankName: rank.rankName,
-        requiredPairsPerSide: rank.requiredPairsPerSide,
-        bonusCash: rank.bonusCash,
-        reward: rank.reward,
-        pairCountAtUpdate: pairCount || 0,
-        bonusClaimed: false,
-      bonusClaimedAt: null,
-      bonusClaimedAmount: 0,
-      },
-      $currentDate: { updatedAt: true }, // ✅ force update timestamp
-    },
-    { upsert: true, session, setDefaultsOnInsert: true }
-  );
-
-  return rank;
-}
-
-async function findRootId(startUserId, session) {
-  let cur = await User.findById(startUserId)
-    .select("_id referredBy")
-    .session(session);
-
-  if (!cur) return null;
-
-  while (cur.referredBy) {
-    const next = await User.findById(cur.referredBy)
-      .select("_id referredBy")
-      .session(session);
-    if (!next) break;
-    cur = next;
-  }
-
-  return cur ? cur._id : null;
-}
-
-
-async function recalcPairsDFS(nodeId, session, memo = new Map()) {
-  if (!nodeId) return 0;
-
-  const key = String(nodeId);
-  if (memo.has(key)) return memo.get(key);
-
-  const node = await User.findById(nodeId)
-    .select("_id leftReferral rightReferral")
-    .session(session);
-
-  if (!node) return 0;
-
-  const leftPairs = node.leftReferral
-    ? await recalcPairsDFS(node.leftReferral, session, memo)
-    : 0;
-
-  const rightPairs = node.rightReferral
-    ? await recalcPairsDFS(node.rightReferral, session, memo)
-    : 0;
-
-  const selfPair = node.leftReferral && node.rightReferral ? 1 : 0;
-  const totalPairs = leftPairs + rightPairs + selfPair;
-
-
-  
-
-  await User.updateOne(
-    { _id: node._id },
-    { $set: { pairCount: totalPairs } },
-    { session }
-  );
-
-  await upsertUserRankByPairCount(node._id, totalPairs, session);
-
-  memo.set(key, totalPairs);
-  return totalPairs;
-}
-
-router.post("/register", async (req, res) => {
+router.patch("/user/status/:userId", async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const { name, email, phone, password, referralCode, side } = req.body;
+    const { userId } = req.params;   // ✅ ab yaha userId milega
+    const { status } = req.body;
 
-    if (!name || !email || !phone || !password) {
-      throw new Error("name, email, phone, password are required");
-    }
-
-    // Sponsor
-    let sponsor = null;
-    if (referralCode) {
-      sponsor = await User.findOne({ referralCode }).session(session);
-      if (!sponsor) throw new Error("Invalid referral code");
-    }
-
-    // Create user
-    const hashed = await bcrypt.hash(password, 10);
-
-    const createdArr = await User.create(
-      [
-        {
-          name,
-          email,
-          phone,
-          password: hashed,
-          referredBy: sponsor ? sponsor._id : null,
-          referralCode: `RC${Math.random()
-            .toString(36)
-            .slice(2, 8)
-            .toUpperCase()}`,
-        },
-      ],
-      { session }
-    );
-    const created = createdArr[0];
-
-   
-
-
-  
-    let placement = null;
-    if (sponsor) {
-      placement = await placeUserBinary({
-        newUserId: created._id,
-        sponsorId: sponsor._id,
-        side: side || "L",
-        session,
+    if (!["Approved", "Reject", "Pending"].includes(status)) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status value",
       });
     }
 
-    // ✅ After placement: recalc from root
-    const rootId = await findRootId(created._id, session);
-    if (rootId) {
-      await recalcPairsDFS(rootId, session);
-      // await upsertUserRank(rootId, session);
+    const user = await User.findById(userId).session(session);
+    if (!user) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    // await upsertUserRank(created._id, session);
+    const oldStatus = user.status;
+    user.status = status;
+    await user.save({ session });
 
-    await upsertUserRankByPairCount(created._id, created.pairCount || 0, session);
+    if (oldStatus !== status) {
+      const rootId = await findRootId(user._id, session);
+      if (rootId) {
+        await recalcPairsDFS(rootId, session);
+      }
+    }
 
     await session.commitTransaction();
     session.endSession();
 
-    const token = jwt.sign(
-      { user: { id: created._id } },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
-
-    return res.json({
-      ok: true,
-      message: "User registered successfully",
-      token,
-      user: {
-        id: created._id,
-        name: created.name,
-        email: created.email,
-        phone: created.phone,
-        referralCode: created.referralCode,
-        referredBy: created.referredBy,
-      },
-      userId: created._id,
-      referralCode: created.referralCode,
-      placement,
-      rootUpdated: !!rootId,
+    return res.status(200).json({
+      success: true,
+      message: `User status updated to ${status}`,
+      data: user,
     });
-  } catch (e) {
+  } catch (error) {
+    console.error(error);
     await session.abortTransaction();
     session.endSession();
-    return res.status(400).json({ ok: false, error: e.message });
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 });
-
- */
-
 
 
 
@@ -1062,5 +1019,9 @@ router.get("/filter-users", async (req, res) => {
     });
   }
 });
+
+
+
+
 
 module.exports = router;

@@ -174,10 +174,6 @@ exports.getUserById = async (req, res) => {
   }
 };
 
-
-// recursive tree
-
-
 exports.getUserTree = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -220,7 +216,7 @@ exports.getRootUsers = async (req, res) => {
       referredBy: null,
       leftReferral:null,
       rightReferral:null,
-      // status: "Approved",
+      status: "Approved",
     })
       .select(
         "username name email phone role referralCode leftReferral rightReferral leftCount rightCount createdAt"
@@ -242,44 +238,95 @@ exports.getRootUsers = async (req, res) => {
 };
 
 
+// exports.updateUserStatus = async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+//     const { status } = req.body;
+
+//     // Validate status
+//     if (!["Approved", "Reject", "Pending"].includes(status)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid status value",
+//       });
+//     }
+
+//     const user = await User.findById(userId);
+
+//     if (!user) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "User not found",
+//       });
+//     }
+
+//     user.status = status;
+//     await user.save();
+
+//     res.status(200).json({
+//       success: true,
+//       message: `User status updated to ${status}`,
+//       data: user,
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Server error",
+//     });
+//   }
+// };
+
+
 exports.updateUserStatus = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const { userId } = req.params;
     const { status } = req.body;
 
-    // Validate status
     if (!["Approved", "Reject", "Pending"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid status value",
-      });
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ success: false, message: "Invalid status value" });
     }
 
-    const user = await User.findById(userId);
-
+    const user = await User.findById(userId).session(session);
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
+    const oldStatus = user.status;
     user.status = status;
-    await user.save();
+    await user.save({ session });
 
-    res.status(200).json({
+    // 👇 Yahin logic hai jo tum chahte ho
+    if (oldStatus !== "Approved" && status === "Approved") {
+      const rootId = await findRootId(user._id, session);
+      if (rootId) {
+        await recalcPairsDFS(rootId, session); // ye pairCount + rank + income sab recalc karega
+      }
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.status(200).json({
       success: true,
       message: `User status updated to ${status}`,
       data: user,
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    await session.abortTransaction();
+    session.endSession();
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
 
 const pickUser = (u) => ({
   id: u._id,

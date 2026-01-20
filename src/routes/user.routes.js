@@ -19,6 +19,7 @@ const upload = multer({ dest: "uploads/" });
 router.put("/:userId/pair-count", updatePairCount);
 
 router.patch("/user/status/:userId", updateUserStatus);
+
 router.get("/root", getRootUsers);
 router.get("/users/:userId/tree", getUserTree);
 
