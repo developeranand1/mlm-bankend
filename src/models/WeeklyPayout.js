@@ -49,12 +49,21 @@ const WeeklyPayoutSchema = new mongoose.Schema(
 
 
 // ✅ OPTION 2: Agar async style chahiye to upar wale hook ko comment kar do
-WeeklyPayoutSchema.pre("save", async function () {
-  const payout = this.payoutAmount || 0;
+WeeklyPayoutSchema.pre("save", function() {
+  const pair = Number(this.pairAmount) || 0;
+  const bonus = Number(this.bonusCash) || 0;
+
+  // total payout before charge
+  const payout = pair + bonus;
+  this.payoutAmount = payout;
+
+  // 5% detection
   this.chargeAmount = Number(((payout * 5) / 100).toFixed(2));
+
+  // after charge
   this.netPayoutAmount = Number((payout - this.chargeAmount).toFixed(2));
-  // Yaha next() NAHI likhna
 });
+
 
 
 module.exports = mongoose.model("WeeklyPayout", WeeklyPayoutSchema);

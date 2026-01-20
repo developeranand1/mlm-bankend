@@ -1,37 +1,4 @@
-// const UserRank = require("../models/UserRank");
-// const WeeklyPayout = require("../models/WeeklyPayout");
-
-// async function runWeeklyPayoutJob() {
-//   console.log("Weekly payout job started...");
-
-//   const users = await UserRank.find({});
-
-//   const now = new Date();
-//   const weekEnd = now;
-//   const weekStart = new Date();
-//   weekStart.setDate(weekEnd.getDate() - 7);
-
-//   for (let user of users) {
-//     const payoutAmount = (user.pairAmount || 0) + (user.bonusCash || 0);
-
-//     await WeeklyPayout.create({
-//       user: user.user,
-//       pairAmount: user.pairAmount,
-//       bonusCash: user.bonusCash,
-//       payoutAmount,
-//       weekStart,
-//       weekEnd
-//     });
-//   }
-
-//   console.log("Weekly payout job done.");
-// }
-
-// module.exports = runWeeklyPayoutJob;
-
-
-
-// services/weeklyPayoutJob.js
+// src/services/weeklyPayoutJob.js
 const UserRank = require("../models/UserRank");
 const WeeklyPayout = require("../models/WeeklyPayout");
 
@@ -46,13 +13,10 @@ async function generateWeeklyPayoutList() {
   weekStart.setDate(weekEnd.getDate() - 7);
 
   for (let user of users) {
-    const payoutAmount = (user.pairAmount || 0) + (user.bonusCash || 0);
-
     await WeeklyPayout.create({
       user: user.user,
-      pairAmount: user.pairAmount,
-      bonusCash: user.bonusCash,
-      payoutAmount,
+      pairAmount: user.pairAmount || 0,
+      bonusCash: user.bonusCash || 0,
       weekStart,
       weekEnd,
     });
@@ -62,4 +26,3 @@ async function generateWeeklyPayoutList() {
 }
 
 module.exports = generateWeeklyPayoutList;
-
