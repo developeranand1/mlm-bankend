@@ -29,10 +29,20 @@ router.get("/", async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
 
     const payouts = await WeeklyPayout.find({})
-      .populate("user", "name email") // apne user model ke hisaab se
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .populate({
+        path: "user",
+
+        select: "name email phone status username role", 
+
+        populate: {
+          path: "kyc",
+  
+          // select: "status panNumber aadharNumber address", 
+        },
+      });
 
     const total = await WeeklyPayout.countDocuments({});
 
@@ -51,6 +61,37 @@ router.get("/", async (req, res) => {
     });
   }
 });
+
+
+// router.get("/", async (req, res) => {
+//   try {
+//     const { page = 1, limit = 20 } = req.query;
+
+//     const skip = (Number(page) - 1) * Number(limit);
+
+//     const payouts = await WeeklyPayout.find({})
+//       .populate("user", "name email") // apne user model ke hisaab se
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(Number(limit));
+
+//     const total = await WeeklyPayout.countDocuments({});
+
+//     res.json({
+//       success: true,
+//       total,
+//       page: Number(page),
+//       limit: Number(limit),
+//       data: payouts,
+//     });
+//   } catch (err) {
+//     console.error("Error fetching weekly payout list:", err);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch weekly payout list",
+//     });
+//   }
+// });
 
 router.get("/user/:userId", async (req, res) => {
   try {
