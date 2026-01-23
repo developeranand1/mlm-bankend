@@ -62,36 +62,157 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.get("/filter", async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
 
-// router.get("/", async (req, res) => {
-//   try {
-//     const { page = 1, limit = 20 } = req.query;
+      // NEW
+      view = "list", // "list" | "summary"
+      summaryType = "weekly", // "weekly" | "monthly" | "range"
+      startDate,
+      endDate,
+      status, // optional filter: PENDING/APPROVED/REJECTED
+      userId, // optional filter
+    } = req.query;
 
-//     const skip = (Number(page) - 1) * Number(limit);
+    // ----------------------------
+    // Common filters
+    // ----------------------------
+    const match = {};
 
-//     const payouts = await WeeklyPayout.find({})
-//       .populate("user", "name email") // apne user model ke hisaab se
-//       .sort({ createdAt: -1 })
-//       .skip(skip)
-//       .limit(Number(limit));
+    if (status) match.status = status;
+    if (userId) match.user = userId;
 
-//     const total = await WeeklyPayout.countDocuments({});
+    // If date range is provided, filter by weekStart/weekEnd overlap
+    // (You can switch to createdAt if that’s what you want to filter by.)
+    if (startDate || endDate) {
+      const start = startDate ? new Date(startDate) : null;
+      const end = endDate ? new Date(endDate) : null;
 
-//     res.json({
-//       success: true,
-//       total,
-//       page: Number(page),
-//       limit: Number(limit),
-//       data: payouts,
-//     });
-//   } catch (err) {
-//     console.error("Error fetching weekly payout list:", err);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to fetch weekly payout list",
-//     });
-//   }
-// });
+      // overlap logic: (weekStart <= end) AND (weekEnd >= start)
+      if (start && end) {
+        match.weekStart = { $lte: end };
+        match.weekEnd = { $gte: start };
+      } else if (start) {
+        match.weekEnd = { $gte: start };
+      } else if (end) {
+        match.weekStart = { $lte: end };
+      }
+    }
+
+    // ----------------------------
+    // SUMMARY VIEW
+    // ----------------------------
+    if (view === "summary") {
+      // For range summary, enforce start & end
+      if (summaryType === "range" && (!startDate || !endDate)) {
+        return res.status(400).json({
+          success: false,
+          message: "startDate and endDate are required for summaryType=range",
+        });
+      }
+
+      let groupId = null;
+
+      if (summaryType === "weekly") {
+        // group by weekStart-weekEnd pair
+        groupId = {
+          weekStart: "$weekStart",
+          weekEnd: "$weekEnd",
+        };
+      } else if (summaryType === "monthly") {
+        // group by month from weekStart (or createdAt if you want)
+        groupId = {
+          year: { $year: "$weekStart" },
+          month: { $month: "$weekStart" },
+        };
+      } else if (summaryType === "range") {
+        // one bucket for whole range
+        groupId = { range: "CUSTOM_RANGE" };
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid summaryType. Use weekly/monthly/range",
+        });
+      }
+
+      const pipeline = [
+        { $match: match },
+        {
+          $group: {
+            _id: groupId,
+
+            totalRecords: { $sum: 1 },
+
+            totalPairAmount: { $sum: "$pairAmount" },
+            totalBonusCash: { $sum: "$bonusCash" },
+            totalPayoutAmount: { $sum: "$payoutAmount" },
+            totalChargeAmount: { $sum: "$chargeAmount" },
+            totalNetPayoutAmount: { $sum: "$netPayoutAmount" },
+
+            pendingCount: {
+              $sum: { $cond: [{ $eq: ["$status", "PENDING"] }, 1, 0] },
+            },
+            approvedCount: {
+              $sum: { $cond: [{ $eq: ["$status", "APPROVED"] }, 1, 0] },
+            },
+            rejectedCount: {
+              $sum: { $cond: [{ $eq: ["$status", "REJECTED"] }, 1, 0] },
+            },
+          },
+        },
+        { $sort: { "_id.year": -1, "_id.month": -1, "_id.weekStart": -1 } },
+      ];
+
+      const summary = await WeeklyPayout.aggregate(pipeline);
+
+      return res.json({
+        success: true,
+        view: "summary",
+        summaryType,
+        filters: { status: status || null, userId: userId || null, startDate: startDate || null, endDate: endDate || null },
+        data: summary,
+      });
+    }
+
+    // ----------------------------
+    // LIST VIEW (your existing code)
+    // ----------------------------
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const payouts = await WeeklyPayout.find(match)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .populate({
+        path: "user",
+        select: "name email phone status username role",
+        populate: { path: "kyc" },
+      });
+
+    const total = await WeeklyPayout.countDocuments(match);
+
+    res.json({
+      success: true,
+      view: "list",
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      data: payouts,
+    });
+  } catch (err) {
+    console.error("Error fetching weekly payout:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch weekly payout",
+    });
+  }
+});
+
+
+
 
 router.get("/user/:userId", async (req, res) => {
   try {
