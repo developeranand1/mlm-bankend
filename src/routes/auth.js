@@ -15,6 +15,181 @@ const router = express.Router();
 
 
 
+// function startOfDay(d) {
+//   const x = new Date(d);
+//   x.setHours(0, 0, 0, 0);
+//   return x;
+// }
+// function endOfDay(d) {
+//   const x = new Date(d);
+//   x.setHours(23, 59, 59, 999);
+//   return x;
+// }
+
+// function getRange(type, from, to) {
+//   const now = new Date();
+
+//   if (type === "weekly") {
+//     const start = startOfDay(now);
+//     start.setDate(start.getDate() - 6);
+//     return { start, end: endOfDay(now) };
+//   }
+
+//   if (type === "monthly") {
+//     const start = new Date(now.getFullYear(), now.getMonth(), 1);
+//     start.setHours(0, 0, 0, 0);
+//     return { start, end: endOfDay(now) };
+//   }
+
+//   if (type === "range") {
+//     if (!from || !to) throw new Error("type=range needs from & to (YYYY-MM-DD)");
+//     const start = startOfDay(new Date(from));
+//     const end = endOfDay(new Date(to));
+//     if (isNaN(start.getTime()) || isNaN(end.getTime())) throw new Error("Invalid from/to date");
+//     if (start > end) throw new Error("'from' cannot be after 'to'");
+//     return { start, end };
+//   }
+
+//   throw new Error("Invalid type. Use weekly|monthly|range");
+// }
+
+// // ✅ NOTE: yaha /api/auths mat lagao
+// router.get("/users/pair-summary/all", async (req, res) => {
+//   try {
+//     const {
+//       type = "weekly",
+//       from,
+//       to,
+//       page = 1,
+//       limit = 20,
+//       search = "",
+//       status = "",      // ✅ NEW
+//       isActive = ""     // ✅ NEW  (true/false)
+//     } = req.query;
+
+//     const { start, end } = getRange(type, from, to);
+
+//     const pg = Math.max(parseInt(page, 10) || 1, 1);
+//     const lm = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
+
+//     // ✅ FILTER: ONLY USER ROLE
+//     const filter = { role: "User" };
+
+//     // ✅ status filter
+//     if (status) filter.status = status;
+
+//     // ✅ isActive filter
+//     if (isActive !== "") filter.isActive = isActive === "true";
+
+//     // ✅ RANGE FILTER (THIS IS THE MAIN FIX)
+//     // Show only users whose lastPairPaidDate is in selected date window
+//     filter.lastPairPaidDate = { $gte: start, $lte: end };
+
+//     // optional search
+//     if (search && search.trim()) {
+//       const q = search.trim();
+//       filter.$or = [
+//         { name: { $regex: q, $options: "i" } },
+//         { email: { $regex: q, $options: "i" } },
+//         { username: { $regex: q, $options: "i" } },
+//         { phone: { $regex: q, $options: "i" } },
+//       ];
+//     }
+
+//     // ✅ count after applying filter
+//     const totalUsers = await User.countDocuments(filter);
+
+//     const users = await User.find(filter)
+//       .select(
+//         "username name email phone role pairPaid pairCount dailyPairPaid lastPairPaidDate maxLimitReached leftCount rightCount isActive status createdAt"
+//       )
+//       .sort({ lastPairPaidDate: -1 }) // ✅ better for range view
+//       .skip((pg - 1) * lm)
+//       .limit(lm)
+//       .lean();
+
+//     const todayStart = startOfDay(new Date());
+//     const todayEnd = endOfDay(new Date());
+
+//     const list = users.map((u) => {
+//       const lastPaid = u.lastPairPaidDate ? new Date(u.lastPairPaidDate) : null;
+
+//       const isToday = lastPaid && lastPaid >= todayStart && lastPaid <= todayEnd;
+//       const todayPairsPaid = isToday ? (u.dailyPairPaid || 0) : 0;
+
+//       const inRequestedRange = lastPaid && lastPaid >= start && lastPaid <= end;
+//       const pairsPaidInRequestedRange = inRequestedRange ? (u.dailyPairPaid || 0) : 0;
+
+//       return {
+//         user: {
+//           id: u._id,
+//           username: u.username,
+//           name: u.name,
+//           email: u.email,
+//           phone: u.phone,
+//           role: u.role,
+//           status: u.status,
+//           isActive: u.isActive,
+//           createdAt: u.createdAt,
+//         },
+//         lifetime: {
+//           pairPaid: u.pairPaid || 0,
+//           pairCount: u.pairCount || 0,
+//           leftCount: u.leftCount || 0,
+//           rightCount: u.rightCount || 0,
+//         },
+//         today: {
+//           lastPairPaidDate: u.lastPairPaidDate || null,
+//           dailyPairPaid: u.dailyPairPaid || 0,
+//           todayPairsPaid,
+//           maxLimitReached: !!u.maxLimitReached,
+//         },
+//         requestedRange: {
+//           type,
+//           start,
+//           end,
+//           lastPairPaidDate: u.lastPairPaidDate || null,
+//           pairsPaidInRequestedRange,
+//         },
+//       };
+//     });
+
+//     const pageTotals = list.reduce(
+//       (acc, x) => {
+//         acc.totalLifetimePairPaid += x.lifetime.pairPaid;
+//         acc.totalLifetimePairCount += x.lifetime.pairCount;
+//         acc.totalTodayPairsPaid += x.today.todayPairsPaid;
+//         acc.totalPairsPaidInRequestedRange += x.requestedRange.pairsPaidInRequestedRange;
+//         return acc;
+//       },
+//       {
+//         totalLifetimePairPaid: 0,
+//         totalLifetimePairCount: 0,
+//         totalTodayPairsPaid: 0,
+//         totalPairsPaidInRequestedRange: 0,
+//       }
+//     );
+
+//     return res.json({
+//       success: true,
+//       pagination: {
+//         page: pg,
+//         limit: lm,
+//         totalUsers,
+//         totalPages: Math.ceil(totalUsers / lm) || 1,
+//       },
+//       range: { type, start, end },
+//       pageTotals,
+//       list,
+//     });
+//   } catch (err) {
+//     return res.status(400).json({ success: false, message: err.message });
+//   }
+// });
+
+
+
+
 function startOfDay(d) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -25,12 +200,13 @@ function endOfDay(d) {
   x.setHours(23, 59, 59, 999);
   return x;
 }
+
 function getRange(type, from, to) {
   const now = new Date();
 
   if (type === "weekly") {
     const start = startOfDay(now);
-    start.setDate(start.getDate() - 6);
+    start.setDate(start.getDate() - 6); // last 7 days
     return { start, end: endOfDay(now) };
   }
 
@@ -55,16 +231,35 @@ function getRange(type, from, to) {
 // ✅ NOTE: yaha /api/auths mat lagao
 router.get("/users/pair-summary/all", async (req, res) => {
   try {
-    const { type = "weekly", from, to, page = 1, limit = 20, search = "" } = req.query;
+    const {
+      type = "weekly",
+      from,
+      to,
+      page = 1,
+      limit = 20,
+      search = "",
+      status = "",
+      isActive = ""
+    } = req.query;
 
     const { start, end } = getRange(type, from, to);
+
     const pg = Math.max(parseInt(page, 10) || 1, 1);
     const lm = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
 
     // ✅ FILTER: ONLY USER ROLE
     const filter = { role: "User" };
 
-    // optional search
+    // ✅ createdAt RANGE FILTER (MAIN FIX)
+    filter.createdAt = { $gte: start, $lte: end };
+
+    // ✅ status filter
+    if (status) filter.status = status;
+
+    // ✅ isActive filter
+    if (isActive !== "") filter.isActive = isActive === "true";
+
+    // ✅ optional search
     if (search && search.trim()) {
       const q = search.trim();
       filter.$or = [
@@ -75,13 +270,14 @@ router.get("/users/pair-summary/all", async (req, res) => {
       ];
     }
 
+    // ✅ count after applying filter
     const totalUsers = await User.countDocuments(filter);
 
     const users = await User.find(filter)
       .select(
         "username name email phone role pairPaid pairCount dailyPairPaid lastPairPaidDate maxLimitReached leftCount rightCount isActive status createdAt"
       )
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1 }) // ✅ createdAt sorting for this view
       .skip((pg - 1) * lm)
       .limit(lm)
       .lean();
@@ -95,6 +291,8 @@ router.get("/users/pair-summary/all", async (req, res) => {
       const isToday = lastPaid && lastPaid >= todayStart && lastPaid <= todayEnd;
       const todayPairsPaid = isToday ? (u.dailyPairPaid || 0) : 0;
 
+      // NOTE: requestedRange values are still based on lastPairPaidDate (as you had)
+      // If you want createdAt-based range calculation too, tell me.
       const inRequestedRange = lastPaid && lastPaid >= start && lastPaid <= end;
       const pairsPaidInRequestedRange = inRequestedRange ? (u.dailyPairPaid || 0) : 0;
 
@@ -154,7 +352,7 @@ router.get("/users/pair-summary/all", async (req, res) => {
         page: pg,
         limit: lm,
         totalUsers,
-        totalPages: Math.ceil(totalUsers / lm),
+        totalPages: Math.ceil(totalUsers / lm) || 1,
       },
       range: { type, start, end },
       pageTotals,
@@ -164,10 +362,6 @@ router.get("/users/pair-summary/all", async (req, res) => {
     return res.status(400).json({ success: false, message: err.message });
   }
 });
-
-
-
-
 
 
 
