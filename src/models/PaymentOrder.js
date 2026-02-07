@@ -1,32 +1,4 @@
-// // models/PaymentOrder.js
-// const mongoose = require("mongoose");
 
-// const PaymentOrderSchema = new mongoose.Schema(
-//   {
-//     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
-//     razorpayOrderId: { type: String, unique: true, sparse: true },
-
-//     amount: { type: Number, required: true }, // INR
-//     currency: { type: String, default: "INR" },
-
-//     status: { type: String, enum: ["CREATED", "PAID", "FAILED"], default: "CREATED" },
-
-//     razorpayPaymentId: String,
-//     razorpaySignature: String,
-
-//     purpose: { type: String, enum: ["ADD_FUND", "BUY_PRODUCT"], default: "ADD_FUND" },
-
-//     meta: {
-//       productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-//     },
-//   },
-//   { timestamps: true }
-// );
-
-// module.exports = mongoose.model("PaymentOrder", PaymentOrderSchema);
-
-
-// src/models/PaymentOrder.js
 const mongoose = require("mongoose");
 
 const PaymentOrderSchema = new mongoose.Schema(

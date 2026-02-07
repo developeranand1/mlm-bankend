@@ -70,5 +70,8 @@ app.use("/api/test/payout", weeklyPayoutTestRoutes);
 
 app.use("/api/rank-progress", require('./routes/rankProgress.js'))
 
+app.use("/api/payment", require("./routes/payment"));
+
+
 // Export the app to be used in server.js
 module.exports = app;
