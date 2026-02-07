@@ -60,7 +60,8 @@ app.use("/api/user-rank", require("./routes/userRank.routes.js"));
 
 app.use("/api/weekly-payouts", require("./routes/weeklyPayoutRoutes"));
 
-require("./cron/weeklyPayout")
+// require("./cron/weeklyPayout")
+require("./cron/weeklyPayoutCron");
 
 
 const weeklyPayoutTestRoutes = require("./routes/weeklyPayoutTestRoutes");
