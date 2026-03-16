@@ -42,20 +42,6 @@ async function findPlacementBFS({ startUserId, side, session }) {
 
   throw new Error("No placement found");
 }
-
-async function updateCountsUpwards({ fromUserId, sideFromParent, session }) {
-  // When a user is placed under some parent on side L/R,
-  // we need to increment counts for parent and all its ancestors:
-  // BUT easiest: walk upwards using referredBy (sponsor chain)
-  // In pure binary, better to store parent pointer. We don't have parent field,
-  // so we will update only sponsor chain is not accurate.
-  //
-  // Best: add parentBinary field. (Recommended)
-  //
-  // Abhi quick fix: add parentBinary in placement step and use that.
-  return;
-}
-
 // Recommended: parentBinary field add karna for accurate upward counts.
 // Hum yaha without schema change bhi kar sakte by searching parent each time (slow).
 async function findBinaryParent(childId, session) {
@@ -88,40 +74,128 @@ async function incrementCountsToRoot({ parentId, placedSide, session }) {
   }
 }
 
-async function placeUserBinary({ newUserId, sponsorId, side, session }) {
-  const s = normalizeSide(side);
+// async function placeUserBinary({ newUserId, sponsorId, side, session }) {
+//   const s = normalizeSide(side);
 
-  const sponsor = await User.findById(sponsorId).session(session);
-  if (!sponsor) throw new Error("Sponsor not found");
+//   const sponsor = await User.findById(sponsorId).session(session);
+//   if (!sponsor) throw new Error("Sponsor not found");
 
-  // 1) Find placement using BFS starting from sponsor on chosen side
-  const { parentId, position } = await findPlacementBFS({
-    startUserId: sponsor._id,
-    side: s,
-    session,
-  });
+//   // 1) Find placement using BFS starting from sponsor on chosen side
+//   const { parentId, position } = await findPlacementBFS({
+//     startUserId: sponsor._id,
+//     side: s,
+//     session,
+//   });
 
-  // 2) Attach newUser under parent
-  const parent = await User.findById(parentId).session(session);
-  if (!parent) throw new Error("Parent not found");
+//   // 2) Attach newUser under parent
+//   const parent = await User.findById(parentId).session(session);
+//   if (!parent) throw new Error("Parent not found");
 
-  if (position === "L") {
-    if (parent.leftReferral) throw new Error("Left already occupied");
-    parent.leftReferral = newUserId;
-  } else {
-    if (parent.rightReferral) throw new Error("Right already occupied");
-    parent.rightReferral = newUserId;
+//   if (position === "L") {
+//     if (parent.leftReferral) throw new Error("Left already occupied");
+//     parent.leftReferral = newUserId;
+//   } else {
+//     if (parent.rightReferral) throw new Error("Right already occupied");
+//     parent.rightReferral = newUserId;
+//   }
+
+//   // optional: downline push
+//   parent.downline.push(newUserId);
+
+//   await parent.save({ session });
+
+//   // 3) Update counts upwards (accurate but slower, works)
+//   await incrementCountsToRoot({ parentId: parent._id, placedSide: position, session });
+
+//   return { parentId: parent._id, position, sponsorId: sponsor._id };
+// }
+
+
+async function findLeafByDirection(nodeId, side, session) {
+  const node = await User.findById(nodeId)
+    .select("_id leftReferral rightReferral")
+    .session(session);
+
+  if (!node) {
+    throw new Error("Node not found while traversing tree");
   }
 
-  // optional: downline push
-  parent.downline.push(newUserId);
+  if (side === "L") {
+    if (!node.leftReferral) return node;
+    return await findLeafByDirection(node.leftReferral, "L", session);
+  }
 
-  await parent.save({ session });
+  if (side === "R") {
+    if (!node.rightReferral) return node;
+    return await findLeafByDirection(node.rightReferral, "R", session);
+  }
 
-  // 3) Update counts upwards (accurate but slower, works)
-  await incrementCountsToRoot({ parentId: parent._id, placedSide: position, session });
+  throw new Error("Invalid side. Must be L or R");
+}
 
-  return { parentId: parent._id, position, sponsorId: sponsor._id };
+async function placeUserBinary({ newUserId, sponsorId, side = "L", session }) {
+  const normalizedSide = String(side || "L").trim().toUpperCase();
+
+  if (!["L", "R"].includes(normalizedSide)) {
+    throw new Error("Invalid side. Must be L or R");
+  }
+
+  const sponsor = await User.findById(sponsorId)
+    .select("_id leftReferral rightReferral")
+    .session(session);
+
+  if (!sponsor) {
+    throw new Error("Sponsor not found");
+  }
+
+  const leafNode = await findLeafByDirection(
+    sponsor._id,
+    normalizedSide,
+    session
+  );
+
+  if (!leafNode) {
+    throw new Error("Could not find placement node");
+  }
+
+  let updateResult;
+
+  if (normalizedSide === "L") {
+    updateResult = await User.updateOne(
+      { _id: leafNode._id, leftReferral: null },
+      { $set: { leftReferral: newUserId } },
+      { session }
+    );
+  } else {
+    updateResult = await User.updateOne(
+      { _id: leafNode._id, rightReferral: null },
+      { $set: { rightReferral: newUserId } },
+      { session }
+    );
+  }
+
+  if (updateResult.modifiedCount === 0) {
+    throw new Error(
+      `Placement failed. ${normalizedSide} slot already filled, please retry.`
+    );
+  }
+
+  // Important:
+  // referredBy sponsor hi rehna chahiye ya placement parent?
+  // Agar tum binary parent ko chain me rakhna chahte ho to leafNode._id use karo.
+  // Agar sponsor chain alag maintain karni hai to sponsorId use karo.
+  // Abhi binary/upline propagation ke hisaab se leafNode parent rakh rahe hain.
+  await User.updateOne(
+    { _id: newUserId },
+    { $set: { referredBy: leafNode._id } },
+    { session }
+  );
+
+  return {
+    parentId: leafNode._id,
+    placedSide: normalizedSide,
+    sponsorId: sponsor._id,
+  };
 }
 
 function computeNewPairs(user) {

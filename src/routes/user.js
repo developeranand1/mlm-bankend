@@ -247,6 +247,7 @@ async function propagateDownline(parentId, childId, session) {
 /**
  * 🚀 Register route
  */
+
 router.post("/register", async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -254,18 +255,30 @@ router.post("/register", async (req, res) => {
   try {
     const { name, email, phone, password, referralCode, side } = req.body;
 
+    const normalizedSide = String(side || "L").trim().toUpperCase();
+
     if (!name || !email || !phone || !password) {
       throw new Error("name, email, phone, password are required");
     }
 
-    // Sponsor
+    if (!["L", "R"].includes(normalizedSide)) {
+      throw new Error("side must be either L or R");
+    }
+
     let sponsor = null;
     if (referralCode) {
       sponsor = await User.findOne({ referralCode }).session(session);
       if (!sponsor) throw new Error("Invalid referral code");
     }
 
-    // Create user
+    const existingUser = await User.findOne({
+      $or: [{ email }],
+    }).session(session);
+
+    if (existingUser) {
+      throw new Error("User with this email already exists");
+    }
+
     const hashed = await bcrypt.hash(password, 10);
 
     const createdArr = await User.create(
@@ -276,7 +289,6 @@ router.post("/register", async (req, res) => {
           phone,
           password: hashed,
           referredBy: sponsor ? sponsor._id : null,
-          // status: "Pending", // if not handled by default schema you can uncomment this
           referralCode: `RC${Math.random()
             .toString(36)
             .slice(2, 8)
@@ -285,21 +297,19 @@ router.post("/register", async (req, res) => {
       ],
       { session }
     );
-    const created = createdArr[0];
 
+    const created = createdArr[0];
     let placement = null;
 
     if (sponsor) {
       placement = await placeUserBinary({
         newUserId: created._id,
         sponsorId: sponsor._id,
-        side: side || "L",
+        side: normalizedSide,
         session,
       });
 
       const parentIdForDownline = placement?.parentId || sponsor._id;
-
-      // parent + saare uplines ke downline me is new user ko push karo
       await propagateDownline(parentIdForDownline, created._id, session);
     }
 
@@ -334,6 +344,95 @@ router.post("/register", async (req, res) => {
     return res.status(400).json({ ok: false, error: e.message });
   }
 });
+
+
+// router.post("/register", async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     const { name, email, phone, password, referralCode, side } = req.body;
+
+//     if (!name || !email || !phone || !password) {
+//       throw new Error("name, email, phone, password are required");
+//     }
+
+//     // Sponsor
+//     let sponsor = null;
+//     if (referralCode) {
+//       sponsor = await User.findOne({ referralCode }).session(session);
+//       if (!sponsor) throw new Error("Invalid referral code");
+//     }
+
+//     // Create user
+//     const hashed = await bcrypt.hash(password, 10);
+
+//     const createdArr = await User.create(
+//       [
+//         {
+//           name,
+//           email,
+//           phone,
+//           password: hashed,
+//           referredBy: sponsor ? sponsor._id : null,
+//           // status: "Pending", // if not handled by default schema you can uncomment this
+//           referralCode: `RC${Math.random()
+//             .toString(36)
+//             .slice(2, 8)
+//             .toUpperCase()}`,
+//         },
+//       ],
+//       { session }
+//     );
+//     const created = createdArr[0];
+
+//     let placement = null;
+
+//     if (sponsor) {
+//       placement = await placeUserBinary({
+//         newUserId: created._id,
+//         sponsorId: sponsor._id,
+//         side: side || "L",
+//         session,
+//       });
+
+//       const parentIdForDownline = placement?.parentId || sponsor._id;
+
+//       // parent + saare uplines ke downline me is new user ko push karo
+//       await propagateDownline(parentIdForDownline, created._id, session);
+//     }
+
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     const token = jwt.sign(
+//       { user: { id: created._id } },
+//       process.env.JWT_SECRET,
+//       { expiresIn: "1h" }
+//     );
+
+//     return res.json({
+//       ok: true,
+//       message: "User registered successfully",
+//       token,
+//       user: {
+//         id: created._id,
+//         name: created.name,
+//         email: created.email,
+//         phone: created.phone,
+//         referralCode: created.referralCode,
+//         referredBy: created.referredBy,
+//       },
+//       userId: created._id,
+//       referralCode: created.referralCode,
+//       placement,
+//     });
+//   } catch (e) {
+//     await session.abortTransaction();
+//     session.endSession();
+//     return res.status(400).json({ ok: false, error: e.message });
+//   }
+// });
 
 /**
  * ✅ Approve / Reject / Pending route
