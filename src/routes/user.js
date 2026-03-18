@@ -434,10 +434,7 @@ router.post("/register", async (req, res) => {
 //   }
 // });
 
-/**
- * ✅ Approve / Reject / Pending route
- * When status changes (especially to Approved), recalc pairs + ranks from root.
- */
+
 router.patch("/user/status/:userId", async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -496,4 +493,38 @@ router.patch("/user/status/:userId", async (req, res) => {
   }
 });
 
+
+
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // check email
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found"
+      });
+    }
+
+    // hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // update password
+    user.password = hashedPassword;
+
+    await user.save();
+
+    res.status(200).json({
+      message: "Password reset successfully"
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: error.message
+    });
+  }
+});
 module.exports = router;

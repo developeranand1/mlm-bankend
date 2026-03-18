@@ -50,26 +50,50 @@ async function findBinaryParent(childId, session) {
   }).session(session);
 }
 
+// async function incrementCountsToRoot({ parentId, placedSide, session }) {
+//   // Walk upwards using parent links (searched) and update leftCount/rightCount
+//   let currentParentId = parentId;
+//   let side = placedSide; // side of the child relative to currentParent
+
+//   while (currentParentId) {
+//     const parent = await User.findById(currentParentId).session(session);
+//     if (!parent) break;
+
+//     if (side === "L") parent.leftCount += 1;
+//     else parent.rightCount += 1;
+
+//     await parent.save({ session });
+
+//     // move up: find parent's parent
+//     const grandParent = await findBinaryParent(parent._id, session);
+//     if (!grandParent) break;
+
+//     // determine parent side relative to grandParent
+//     side = String(grandParent.leftReferral) === String(parent._id) ? "L" : "R";
+//     currentParentId = grandParent._id;
+//   }
+// }
+
+
 async function incrementCountsToRoot({ parentId, placedSide, session }) {
-  // Walk upwards using parent links (searched) and update leftCount/rightCount
   let currentParentId = parentId;
-  let side = placedSide; // side of the child relative to currentParent
+  let side = placedSide;
 
   while (currentParentId) {
-    const parent = await User.findById(currentParentId).session(session);
-    if (!parent) break;
+    const incField = side === "L" ? "leftCount" : "rightCount";
 
-    if (side === "L") parent.leftCount += 1;
-    else parent.rightCount += 1;
+    await User.updateOne(
+      { _id: currentParentId },
+      { $inc: { [incField]: 1 } },
+      { session }
+    );
 
-    await parent.save({ session });
-
-    // move up: find parent's parent
-    const grandParent = await findBinaryParent(parent._id, session);
+    const grandParent = await findBinaryParent(currentParentId, session);
     if (!grandParent) break;
 
-    // determine parent side relative to grandParent
-    side = String(grandParent.leftReferral) === String(parent._id) ? "L" : "R";
+    side =
+      String(grandParent.leftReferral) === String(currentParentId) ? "L" : "R";
+
     currentParentId = grandParent._id;
   }
 }
@@ -190,6 +214,12 @@ async function placeUserBinary({ newUserId, sponsorId, side = "L", session }) {
     { $set: { referredBy: leafNode._id } },
     { session }
   );
+
+   await incrementCountsToRoot({
+    parentId: leafNode._id,
+    placedSide: normalizedSide,
+    session,
+  });
 
   return {
     parentId: leafNode._id,
