@@ -1,10 +1,37 @@
+// // const nodemailer = require("nodemailer");
+
+// // const sendEmail = async ({ to, subject, html, text }) => {
+// //   const transporter = nodemailer.createTransport({
+// //     host: process.env.SMTP_HOST,
+// //     port: Number(process.env.SMTP_PORT),
+// //     secure: false, // true only for 465
+// //     auth: {
+// //       user: process.env.SMTP_USER,
+// //       pass: process.env.SMTP_PASS,
+// //     },
+// //   });
+
+// //   const info = await transporter.sendMail({
+// //     from: process.env.FROM_EMAIL,
+// //     to,
+// //     subject,
+// //     text,
+// //     html,
+// //   });
+
+// //   return info;
+// // };
+
+// // module.exports = sendEmail;
+
+
 // const nodemailer = require("nodemailer");
 
 // const sendEmail = async ({ to, subject, html, text }) => {
 //   const transporter = nodemailer.createTransport({
 //     host: process.env.SMTP_HOST,
 //     port: Number(process.env.SMTP_PORT),
-//     secure: false, // true only for 465
+//     secure: false,
 //     auth: {
 //       user: process.env.SMTP_USER,
 //       pass: process.env.SMTP_PASS,
@@ -19,6 +46,8 @@
 //     html,
 //   });
 
+//   console.log("✅ Email sent:", info.messageId);
+
 //   return info;
 // };
 
@@ -27,28 +56,36 @@
 
 const nodemailer = require("nodemailer");
 
-const sendEmail = async ({ to, subject, html, text }) => {
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+const sendEmail = async ({ to, subject, text, html }) => {
+  try {
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false, // TLS
+      auth: {
+        user: "oldasgold25info@gmail.com",
+        pass: "bnpnlowxhqqqwojn", // app password
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
 
-  const info = await transporter.sendMail({
-    from: process.env.FROM_EMAIL,
-    to,
-    subject,
-    text,
-    html,
-  });
+    const info = await transporter.sendMail({
+      from: `"OldAsGold" <oldasgold25info@gmail.com>`,
+      to,
+      subject,
+      text,
+      html,
+    });
 
-  console.log("✅ Email sent:", info.messageId);
+    console.log("✅ Email sent:", info.messageId);
+    return info;
 
-  return info;
+  } catch (error) {
+    console.error("❌ Email error:", error);
+    throw error;
+  }
 };
 
 module.exports = sendEmail;
