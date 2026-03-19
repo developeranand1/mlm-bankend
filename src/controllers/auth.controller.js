@@ -8,7 +8,67 @@ const sendEmail = require("../utils/sendEmail");
 const crypto = require("crypto");
 const resetPasswordTemplate = require("../utils/resetPasswordTemplate");
 
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
 
+    // 🔍 Check user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // 🔐 Generate token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    // 💾 Save token in DB
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+
+    await user.save({ validateBeforeSave: false });
+
+    // 🔗 Reset URL
+    const resetUrl = `https://oldasgold.com/reset-password/${resetToken}`;
+
+    // 📧 Email template
+    const html = resetPasswordTemplate({
+      name: user.name,
+      resetUrl,
+      appName: "OldAsGold",
+    });
+
+    // ✅ 🔥 SEND RESPONSE FIRST (IMPORTANT)
+    res.status(200).json({
+      success: true,
+      message: "Reset link sent to email",
+    });
+
+    // 🚀 Send email in background (no await)
+    sendEmail({
+      to: user.email,
+      subject: "Reset Password",
+      text: `Hello ${user.name}, reset your password using this link: ${resetUrl}`,
+      html,
+    }).catch((err) => {
+      console.error("❌ Email sending failed:", err);
+    });
+
+  } catch (err) {
+    console.error("❌ Forgot Password Error:", err);
+
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+    });
+  }
+};
 // exports.forgotPassword = async (req, res) => {
 //   try {
 //     const { email } = req.body;
@@ -25,61 +85,30 @@ const resetPasswordTemplate = require("../utils/resetPasswordTemplate");
 //     user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
 //     await user.save({ validateBeforeSave: false });
 
-//     const resetUrl = `http://localhost:3000/reset-password/${resetToken}`;
+//     const resetUrl = `https://oldasgold.com/reset-password/${resetToken}`;
+
+//     // ✅ USE EMAIL TEMPLATE WITH USER NAME
+//     const html = resetPasswordTemplate({
+//       name: user.name,
+//       resetUrl,
+//       appName: "Your App Name",
+//     });
 
 //     await sendEmail({
 //       to: user.email,
 //       subject: "Reset Password",
-//       text: `Reset your password using this link: ${resetUrl}`,
-//       html: `<p><a href="${resetUrl}">Reset Password</a></p>`,
+//       text: `Hello ${user.name}, reset your password using this link: ${resetUrl}`,
+//       html,
 //     });
 
-//     res.json({ success: true, message: "Reset link sent to email" });
+//     res.json({
+//       success: true,
+//       message: "Reset link sent to email",
+//     });
 //   } catch (err) {
 //     res.status(500).json({ success: false, message: err.message });
 //   }
 // };
-
-exports.forgotPassword = async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
-
-    user.resetPasswordToken = hashedToken;
-    user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
-    await user.save({ validateBeforeSave: false });
-
-    const resetUrl = `https://oldasgold.com/reset-password/${resetToken}`;
-
-    // ✅ USE EMAIL TEMPLATE WITH USER NAME
-    const html = resetPasswordTemplate({
-      name: user.name,
-      resetUrl,
-      appName: "Your App Name",
-    });
-
-    await sendEmail({
-      to: user.email,
-      subject: "Reset Password",
-      text: `Hello ${user.name}, reset your password using this link: ${resetUrl}`,
-      html,
-    });
-
-    res.json({
-      success: true,
-      message: "Reset link sent to email",
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
 
 
 exports.resetPassword = async (req, res) => {
