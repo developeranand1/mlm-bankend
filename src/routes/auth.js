@@ -999,12 +999,12 @@ router.post("/login", async (req, res) => {
       });
     }
 
-     if (user.status !== 'Approved') {
-      return res.status(403).json({
-        ok: false,
-        error: "Your account is not approved. Please contact support.",
-      });
-    }
+    //  if (user.status !== 'Approved') {
+    //   return res.status(403).json({
+    //     ok: false,
+    //     error: "Your account is not approved. Please contact support.",
+    //   });
+    // }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
