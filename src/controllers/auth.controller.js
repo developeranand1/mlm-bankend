@@ -23,41 +23,47 @@ exports.forgotPassword = async (req, res) => {
 
     // 🔐 Generate token
     const resetToken = crypto.randomBytes(32).toString("hex");
+
     const hashedToken = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
 
-    // 💾 Save token in DB
+    // 💾 Save in DB
     user.resetPasswordToken = hashedToken;
     user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
 
     await user.save({ validateBeforeSave: false });
 
-    // 🔗 Reset URL
-    const resetUrl = `https://oldasgold.com/reset-password/${resetToken}`;
+    // 🔗 URL
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-    // 📧 Email template
+    // 📧 Email HTML
     const html = resetPasswordTemplate({
       name: user.name,
       resetUrl,
-      appName: "OldAsGold",
     });
 
-    // ✅ 🔥 SEND RESPONSE FIRST (IMPORTANT)
+    // ✅ SEND RESPONSE FIRST
     res.status(200).json({
       success: true,
       message: "Reset link sent to email",
     });
 
-    // 🚀 Send email in background (no await)
-    sendEmail({
-      to: user.email,
-      subject: "Reset Password",
-      text: `Hello ${user.name}, reset your password using this link: ${resetUrl}`,
-      html,
-    }).catch((err) => {
-      console.error("❌ Email sending failed:", err);
+    // 🚀 BACKGROUND EMAIL (NO BLOCK)
+    setImmediate(async () => {
+      try {
+        await sendEmail({
+          to: user.email,
+          subject: "Reset Password",
+          text: `Reset password: ${resetUrl}`,
+          html,
+        });
+
+        console.log("✅ Email sent successfully");
+      } catch (err) {
+        console.error("❌ Email failed:", err);
+      }
     });
 
   } catch (err) {
