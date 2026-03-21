@@ -29,41 +29,32 @@ exports.forgotPassword = async (req, res) => {
       .update(resetToken)
       .digest("hex");
 
-    // 💾 Save in DB
+    // 💾 Save token
     user.resetPasswordToken = hashedToken;
     user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
 
     await user.save({ validateBeforeSave: false });
 
     // 🔗 URL
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const resetUrl = `https://oldasgold.com/reset-password/${resetToken}`;
 
-    // 📧 Email HTML
     const html = resetPasswordTemplate({
       name: user.name,
       resetUrl,
     });
 
-    // ✅ SEND RESPONSE FIRST
+    // 🔥 IMPORTANT: await email (no background)
+    await sendEmail({
+      to: user.email,
+      subject: "Reset Password",
+      text: `Reset password: ${resetUrl}`,
+      html,
+    });
+
+    // ✅ Only success if email sent
     res.status(200).json({
       success: true,
       message: "Reset link sent to email",
-    });
-
-    // 🚀 BACKGROUND EMAIL (NO BLOCK)
-    setImmediate(async () => {
-      try {
-        await sendEmail({
-          to: user.email,
-          subject: "Reset Password",
-          text: `Reset password: ${resetUrl}`,
-          html,
-        });
-
-        console.log("✅ Email sent successfully");
-      } catch (err) {
-        console.error("❌ Email failed:", err);
-      }
     });
 
   } catch (err) {
@@ -71,11 +62,11 @@ exports.forgotPassword = async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: "Server Error",
+      message: "Email not sent / Server error",
+      error: err.message,
     });
   }
 };
-
 
 exports.resetPassword = async (req, res) => {
   try {
