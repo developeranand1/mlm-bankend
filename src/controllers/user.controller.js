@@ -38,10 +38,120 @@ exports.getKycUsers = async (req, res) => {
   }
 };
 
-exports.updateKYC = async (req, res) => {
-  const userIdFromParams = req.params.userId; // Extracting userId from URL params
+// exports.updateKYC = async (req, res) => {
+//   const userIdFromParams = req.params.userId; // Extracting userId from URL params
 
-  // Check if the request body is empty
+//   // Check if the request body is empty
+//   if (!req.body) {
+//     return res.status(400).json({ msg: "Request body is missing" });
+//   }
+
+//   const {
+//     aadharNumber,
+//     panNumber,
+//     passbookImage,
+//     bankName,
+//     bankType,
+//     accountHolderName,
+//     bankAccountNumber,
+//     ifscCode,
+//     kycStatus,
+//   } = req.body;
+
+//   try {
+//     // Check if the user exists
+//     let user = await User.findById(userIdFromParams);
+//     if (!user) {
+//       return res.status(400).json({ msg: "User not found" });
+//     }
+
+//     // Find the existing KYC record for the user
+//     let kyc = await Kyc.findOne({ userId: user._id });
+
+//     // If no KYC record exists, create a new one
+//     if (!kyc) {
+//       kyc = new Kyc({
+//         userId: user._id,
+//         aadharNumber: aadharNumber || "",
+//         bankName: bankName || "",
+//         bankType: bankType || "",
+//         panNumber: panNumber || "",
+//         status: kycStatus || "Pending", // Default status is 'Pending'
+//         accountHolderName: accountHolderName || "",
+//         bankAccountNumber: bankAccountNumber || "",
+//         ifscCode: ifscCode || "",
+//         // Initialize other fields as necessary
+//       });
+//     }
+
+//     // Upload Aadhar image to Cloudinary if provided
+//     if (req.files && req.files.aadharImage) {
+//       const aadharUploadResult = await cloudinary.uploader.upload(
+//         req.files.aadharImage[0].path,
+//         {
+//           folder: "mlm/kyc",
+//         }
+//       );
+//       kyc.aadharImage = aadharUploadResult.secure_url; // Save the image URL in KYC schema
+//     }
+
+//     // Upload PAN image to Cloudinary if provided
+//     if (req.files && req.files.panImage) {
+//       const panUploadResult = await cloudinary.uploader.upload(
+//         req.files.panImage[0].path,
+//         {
+//           folder: "mlm/kyc",
+//         }
+//       );
+//       kyc.panImage = panUploadResult.secure_url; // Save the image URL in KYC schema
+//     }
+
+//     // Upload Passbook image to Cloudinary if provided
+//     if (req.files && req.files.passbookImage) {
+//       const passbookUploadResult = await cloudinary.uploader.upload(
+//         req.files.passbookImage[0].path,
+//         {
+//           folder: "mlm/kyc",
+//         }
+//       );
+//       kyc.passbookImage = passbookUploadResult.secure_url; // Save the passbook image URL
+//     }
+
+//     // Update the KYC fields if provided
+//     if (aadharNumber) kyc.aadharNumber = aadharNumber;
+//     if (panNumber) kyc.panNumber = panNumber;
+//     if (bankType) kyc.bankType = bankType;
+//     if (bankName) kyc.bankName = bankName;
+
+//     if (accountHolderName) kyc.accountHolderName = accountHolderName;
+//     if (bankAccountNumber) kyc.bankAccountNumber = bankAccountNumber;
+//     if (ifscCode) kyc.ifscCode = ifscCode;
+//     if (kycStatus) kyc.status = kycStatus;
+
+//     // Save the updated KYC data
+//     await kyc.save();
+
+//     // Update user details like accountHolderName, bankAccountNumber, ifscCode, etc.
+//     user.accountHolderName = accountHolderName || user.accountHolderName;
+//     user.bankAccountNumber = bankAccountNumber || user.bankAccountNumber;
+//     user.ifscCode = ifscCode || user.ifscCode;
+//     user.bankName = bankName || user.bankName;
+//     user.bankType = bankType || user.bankType;
+
+//     // Save the updated user data
+//     await user.save();
+
+//     // Send response with updated KYC and user data
+//     res.json({ msg: "KYC and user details updated successfully", kyc, user });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).send("Server error");
+//   }
+// };
+
+exports.updateKYC = async (req, res) => {
+  const userIdFromParams = req.params.userId;
+
   if (!req.body) {
     return res.status(400).json({ msg: "Request body is missing" });
   }
@@ -49,7 +159,6 @@ exports.updateKYC = async (req, res) => {
   const {
     aadharNumber,
     panNumber,
-    passbookImage,
     bankName,
     bankType,
     accountHolderName,
@@ -59,16 +168,13 @@ exports.updateKYC = async (req, res) => {
   } = req.body;
 
   try {
-    // Check if the user exists
     let user = await User.findById(userIdFromParams);
     if (!user) {
       return res.status(400).json({ msg: "User not found" });
     }
 
-    // Find the existing KYC record for the user
     let kyc = await Kyc.findOne({ userId: user._id });
 
-    // If no KYC record exists, create a new one
     if (!kyc) {
       kyc = new Kyc({
         userId: user._id,
@@ -76,15 +182,14 @@ exports.updateKYC = async (req, res) => {
         bankName: bankName || "",
         bankType: bankType || "",
         panNumber: panNumber || "",
-        status: kycStatus || "Pending", // Default status is 'Pending'
+        status: kycStatus || "Pending",
         accountHolderName: accountHolderName || "",
         bankAccountNumber: bankAccountNumber || "",
         ifscCode: ifscCode || "",
-        // Initialize other fields as necessary
       });
     }
 
-    // Upload Aadhar image to Cloudinary if provided
+    // Aadhar front image upload
     if (req.files && req.files.aadharImage) {
       const aadharUploadResult = await cloudinary.uploader.upload(
         req.files.aadharImage[0].path,
@@ -92,10 +197,21 @@ exports.updateKYC = async (req, res) => {
           folder: "mlm/kyc",
         }
       );
-      kyc.aadharImage = aadharUploadResult.secure_url; // Save the image URL in KYC schema
+      kyc.aadharImage = aadharUploadResult.secure_url;
     }
 
-    // Upload PAN image to Cloudinary if provided
+    // ✅ Aadhar back image upload
+    if (req.files && req.files.aadharImageBackSide) {
+      const aadharBackUploadResult = await cloudinary.uploader.upload(
+        req.files.aadharImageBackSide[0].path,
+        {
+          folder: "mlm/kyc",
+        }
+      );
+      kyc.aadharImageBackSide = aadharBackUploadResult.secure_url;
+    }
+
+    // PAN image upload
     if (req.files && req.files.panImage) {
       const panUploadResult = await cloudinary.uploader.upload(
         req.files.panImage[0].path,
@@ -103,10 +219,10 @@ exports.updateKYC = async (req, res) => {
           folder: "mlm/kyc",
         }
       );
-      kyc.panImage = panUploadResult.secure_url; // Save the image URL in KYC schema
+      kyc.panImage = panUploadResult.secure_url;
     }
 
-    // Upload Passbook image to Cloudinary if provided
+    // Passbook image upload
     if (req.files && req.files.passbookImage) {
       const passbookUploadResult = await cloudinary.uploader.upload(
         req.files.passbookImage[0].path,
@@ -114,35 +230,33 @@ exports.updateKYC = async (req, res) => {
           folder: "mlm/kyc",
         }
       );
-      kyc.passbookImage = passbookUploadResult.secure_url; // Save the passbook image URL
+      kyc.passbookImage = passbookUploadResult.secure_url;
     }
 
-    // Update the KYC fields if provided
     if (aadharNumber) kyc.aadharNumber = aadharNumber;
     if (panNumber) kyc.panNumber = panNumber;
     if (bankType) kyc.bankType = bankType;
     if (bankName) kyc.bankName = bankName;
-
     if (accountHolderName) kyc.accountHolderName = accountHolderName;
     if (bankAccountNumber) kyc.bankAccountNumber = bankAccountNumber;
     if (ifscCode) kyc.ifscCode = ifscCode;
     if (kycStatus) kyc.status = kycStatus;
 
-    // Save the updated KYC data
     await kyc.save();
 
-    // Update user details like accountHolderName, bankAccountNumber, ifscCode, etc.
     user.accountHolderName = accountHolderName || user.accountHolderName;
     user.bankAccountNumber = bankAccountNumber || user.bankAccountNumber;
     user.ifscCode = ifscCode || user.ifscCode;
     user.bankName = bankName || user.bankName;
     user.bankType = bankType || user.bankType;
 
-    // Save the updated user data
     await user.save();
 
-    // Send response with updated KYC and user data
-    res.json({ msg: "KYC and user details updated successfully", kyc, user });
+    res.json({
+      msg: "KYC and user details updated successfully",
+      kyc,
+      user,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).send("Server error");

@@ -11,6 +11,7 @@ const KycSchema = new mongoose.Schema({
   aadharNumber: { type: String },
   panNumber: { type: String },
   aadharImage: { type: String },
+  aadharImageBackSide:{type:String},
   panImage: { type: String },
   status: { type: String, default: "pending" },
 });

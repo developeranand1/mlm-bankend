@@ -29,6 +29,7 @@ router.put(
   "/updateKYC/:userId",
   upload.fields([
     { name: "aadharImage", maxCount: 1 },
+     { name: "aadharImageBackSide", maxCount: 1 },
     { name: "panImage", maxCount: 1 },
     { name: "passbookImage", maxCount: 1 },
   ]),
