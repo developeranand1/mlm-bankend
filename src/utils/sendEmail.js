@@ -1,25 +1,22 @@
 
 
-
 // const nodemailer = require("nodemailer");
 
 // const sendEmail = async ({ to, subject, text, html }) => {
 //   try {
 //     const transporter = nodemailer.createTransport({
-//       host: "smtp.gmail.com",
-//       port: 587,
-//       secure: false, // TLS
+//       host: process.env.SMTP_HOST,
+//       port: Number(process.env.SMTP_PORT),
+//       secure: false, // ✅ 465 ke liye true
 //       auth: {
-//         user: "oldasgold25info@gmail.com",
-//         pass: "bnpnlowxhqqqwojn", // app password
+//         user: process.env.SMTP_USER,
+//         pass: process.env.SMTP_PASS,
 //       },
-//       tls: {
-//         rejectUnauthorized: false,
-//       },
+//       connectionTimeout: 10000,
 //     });
 
 //     const info = await transporter.sendMail({
-//       from: `"OldAsGold" <oldasgold25info@gmail.com>`,
+//       from: `"OldAsGold" <${process.env.FROM_EMAIL}>`,
 //       to,
 //       subject,
 //       text,
@@ -43,18 +40,24 @@ const nodemailer = require("nodemailer");
 const sendEmail = async ({ to, subject, text, html }) => {
   try {
     const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT),
-      secure: false, // ✅ 465 ke liye true
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false, // ✅ 587 ke liye false
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
-      connectionTimeout: 10000,
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 15000,
     });
 
+    // ✅ SMTP connection check
+    await transporter.verify();
+    console.log("✅ SMTP Connected");
+
     const info = await transporter.sendMail({
-      from: `"OldAsGold" <${process.env.FROM_EMAIL}>`,
+      from: `"OldAsGold" <${process.env.SMTP_USER}>`, // better use same email
       to,
       subject,
       text,
