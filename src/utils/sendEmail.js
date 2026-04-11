@@ -80,18 +80,20 @@ const axios = require("axios");
 
 const sendEmail = async ({ to, subject, text, html }) => {
   try {
+    const payload = {
+      sender: {
+        name: process.env.BREVO_SENDER_NAME || "OldAsGold",
+        email: process.env.BREVO_SENDER_EMAIL,
+      },
+      to: [{ email: to }],
+      subject,
+      textContent: text || "",
+      htmlContent: html || `<p>${text || ""}</p>`,
+    };
+
     const response = await axios.post(
       "https://api.brevo.com/v3/smtp/email",
-      {
-        sender: {
-          name: process.env.BREVO_SENDER_NAME || "OldAsGold",
-          email: process.env.BREVO_SENDER_EMAIL,
-        },
-        to: [{ email: to }],
-        subject,
-        textContent: text || "",
-        htmlContent: html || `<p>${text || ""}</p>`,
-      },
+      payload,
       {
         headers: {
           accept: "application/json",
@@ -105,7 +107,9 @@ const sendEmail = async ({ to, subject, text, html }) => {
     console.log("✅ Email sent:", response.data);
     return response.data;
   } catch (error) {
-    console.error("❌ Brevo Email error:", error.response?.data || error.message);
+    console.error("❌ Brevo Email error:");
+    console.error("Status:", error.response?.status);
+    console.error("Data:", error.response?.data || error.message);
     throw error;
   }
 };
