@@ -8,6 +8,7 @@ const UserRank = require("../models/UserRank");
 const { placeUserBinary } = require("../services/binary.service");
 const { getRankByPairs } = require("../utils/rank.utils");
 const { applyDailyPairLimit } = require("../utils/pairLimit");
+const sendEmail = require("../utils/sendEmail");
 
 const router = express.Router();
 
@@ -476,6 +477,40 @@ router.patch("/user/status/:userId", async (req, res) => {
 
     await session.commitTransaction();
     session.endSession();
+
+    try {
+  await sendEmail({
+    to: created.email,
+    subject: "🎉 Welcome to OldAsGold",
+    text: `Hello ${created.name}, your account has been successfully created.`,
+    html: `
+      <div style="font-family: Arial; background:#f4f6f8; padding:20px;">
+        <div style="max-width:520px; margin:auto; background:#fff; padding:24px; border-radius:10px;">
+          <h2>Welcome ${created.name} 👋</h2>
+          
+          <p>Your account has been successfully registered.</p>
+
+          <p><strong>Your Referral Code:</strong> ${created.referralCode}</p>
+
+          <p>You can now login and start using OldAsGold.</p>
+
+          <a href="https://oldasgold.com/login"
+             style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;margin-top:12px;">
+             Login Now
+          </a>
+
+          <p style="color:#6b7280; font-size:12px; margin-top:18px;">
+            — OldAsGold Team
+          </p>
+        </div>
+      </div>
+    `,
+  });
+
+  console.log("✅ Welcome email sent");
+} catch (emailErr) {
+  console.error("❌ Email failed but user registered:", emailErr.message);
+}
 
     return res.status(200).json({
       success: true,
