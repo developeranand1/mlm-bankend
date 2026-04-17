@@ -22,11 +22,60 @@ router.post("/generate", async (req, res) => {
   }
 });
 
+// router.get("/", async (req, res) => {
+//   try {
+//     const { page = 1, limit = 20 } = req.query;
+
+//     const skip = (Number(page) - 1) * Number(limit);
+
+//     const payouts = await WeeklyPayout.find({})
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(Number(limit))
+//       .populate({
+//         path: "user",
+
+//         select: "name email phone status username role", 
+
+//         populate: {
+//           path: "kyc",
+  
+//           // select: "status panNumber aadharNumber address", 
+//         },
+//       });
+
+//     const total = await WeeklyPayout.countDocuments({});
+
+//     res.json({
+//       success: true,
+//       total,
+//       page: Number(page),
+//       limit: Number(limit),
+//       data: payouts,
+//     });
+//   } catch (err) {
+//     console.error("Error fetching weekly payout list:", err);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch weekly payout list",
+//     });
+//   }
+// });
+
+
 router.get("/", async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, search = "" } = req.query;
 
     const skip = (Number(page) - 1) * Number(limit);
+
+    // 🔍 user search condition
+    let userFilter = {};
+    if (search) {
+      userFilter = {
+        name: { $regex: search, $options: "i" }, // case-insensitive
+      };
+    }
 
     const payouts = await WeeklyPayout.find({})
       .sort({ createdAt: -1 })
@@ -34,15 +83,15 @@ router.get("/", async (req, res) => {
       .limit(Number(limit))
       .populate({
         path: "user",
-
-        select: "name email phone status username role", 
-
+        match: userFilter, // ✅ important
+        select: "name email phone status username role",
         populate: {
           path: "kyc",
-  
-          // select: "status panNumber aadharNumber address", 
         },
       });
+
+    // ❗ remove those where user didn't match search
+    const filtered = payouts.filter(p => p.user);
 
     const total = await WeeklyPayout.countDocuments({});
 
@@ -51,8 +100,9 @@ router.get("/", async (req, res) => {
       total,
       page: Number(page),
       limit: Number(limit),
-      data: payouts,
+      data: filtered,
     });
+
   } catch (err) {
     console.error("Error fetching weekly payout list:", err);
     res.status(500).json({

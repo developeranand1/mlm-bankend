@@ -469,66 +469,200 @@ router.post("/register", async (req, res) => {
 //   }
 // });
 
+const ALLOWED_STATUS = ["Approved", "Reject", "Pending"];
+const MAX_RETRIES = 5;
+
+async function runTransactionWithRetry(operation, maxRetries = MAX_RETRIES) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const session = await mongoose.startSession();
+
+    try {
+      let result;
+
+      await session.withTransaction(async () => {
+        result = await operation(session);
+      });
+
+      await session.endSession();
+      return result;
+    } catch (error) {
+      lastError = error;
+      await session.endSession();
+
+      const isRetryable =
+        error?.code === 112 ||
+        error?.codeName === "WriteConflict" ||
+        error?.errorLabelSet?.has?.("TransientTransactionError") ||
+        error?.errorResponse?.errorLabels?.includes?.("TransientTransactionError");
+
+      if (!isRetryable || attempt === maxRetries) {
+        throw error;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+    }
+  }
+
+  throw lastError;
+}
 
 router.patch("/user/status/:userId", async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const startedAt = Date.now();
 
   try {
     const { userId } = req.params;
     const { status } = req.body;
 
-    if (!["Approved", "Reject", "Pending"].includes(status)) {
-      await session.abortTransaction();
-      session.endSession();
+    if (!ALLOWED_STATUS.includes(status)) {
       return res.status(400).json({
         success: false,
         message: "Invalid status value",
       });
     }
 
-    const user = await User.findById(userId).session(session);
-    if (!user) {
-      await session.abortTransaction();
-      session.endSession();
+    const result = await runTransactionWithRetry(async (session) => {
+      const user = await User.findById(userId).session(session);
+
+      if (!user) {
+        const err = new Error("User not found");
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const oldStatus = user.status || "Pending";
+
+      if (oldStatus === status) {
+        return {
+          user,
+          changed: false,
+          rootId: null,
+        };
+      }
+
+      user.status = status;
+      await user.save({ session });
+
+      const rootId = await findRootId(user._id);
+
+      return {
+        user,
+        changed: true,
+        rootId: rootId || null,
+      };
+    });
+
+    // response FIRST
+    res.status(200).json({
+      success: true,
+      message: `User status updated to ${status}`,
+      data: {
+        _id: result.user._id,
+        status: result.user.status,
+      },
+    });
+
+    console.log(
+      `PATCH /api/registers/user/status/${userId} 200 ${Date.now() - startedAt}ms`
+    );
+
+    // heavy work in background
+    if (result.changed && result.rootId) {
+      setImmediate(async () => {
+        try {
+          await recalcPairsDFS(result.rootId);
+          console.log(
+            `recalcPairsDFS completed for rootId=${result.rootId}`
+          );
+        } catch (bgError) {
+          console.error(
+            `recalcPairsDFS failed for rootId=${result.rootId}:`,
+            bgError
+          );
+        }
+      });
+    }
+  } catch (error) {
+    console.error("PATCH /user/status error:", error);
+
+    if (error.statusCode === 404) {
       return res.status(404).json({
         success: false,
-        message: "User not found",
+        message: error.message,
       });
     }
 
-    const oldStatus = user.status;
-    user.status = status;
-    await user.save({ session });
-
-    // Jab bhi status change ho (Pending -> Approved, Approved -> Reject, etc.)
-    if (oldStatus !== status) {
-      const rootId = await findRootId(user._id, session);
-      if (rootId) {
-        await recalcPairsDFS(rootId, session);
-      }
-    }
-
-    await session.commitTransaction();
-    session.endSession();
-
-
-
-    return res.status(200).json({
-      success: true,
-      message: `User status updated to ${status}`,
-      data: user,
-    });
-  } catch (error) {
-    console.error(error);
-    await session.abortTransaction();
-    session.endSession();
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message:
+        error?.codeName === "WriteConflict"
+          ? "Write conflict occurred, please retry"
+          : "Server error",
+      error: error.message,
     });
   }
 });
+
+// router.patch("/user/status/:userId", async (req, res) => {
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     const { userId } = req.params;
+//     const { status } = req.body;
+
+//     if (!["Approved", "Reject", "Pending"].includes(status)) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid status value",
+//       });
+//     }
+
+//     const user = await User.findById(userId).session(session);
+//     if (!user) {
+//       await session.abortTransaction();
+//       session.endSession();
+//       return res.status(404).json({
+//         success: false,
+//         message: "User not found",
+//       });
+//     }
+
+//     const oldStatus = user.status;
+//     user.status = status;
+//     await user.save({ session });
+
+//     // Jab bhi status change ho (Pending -> Approved, Approved -> Reject, etc.)
+//     if (oldStatus !== status) {
+//       const rootId = await findRootId(user._id, session);
+//       if (rootId) {
+//         await recalcPairsDFS(rootId, session);
+//       }
+//     }
+
+//     await session.commitTransaction();
+//     session.endSession();
+
+
+
+//     return res.status(200).json({
+//       success: true,
+//       message: `User status updated to ${status}`,
+//       data: user,
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     await session.abortTransaction();
+//     session.endSession();
+//     return res.status(500).json({
+//       success: false,
+//       message: "Server error",
+//     });
+//   }
+// });
 
 
 
